@@ -2,6 +2,7 @@
 *.csv
 *.h5
 *.json
+*.xlsx
 
 
 # Byte-compiled / optimized / DLL files
