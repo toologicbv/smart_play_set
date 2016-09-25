@@ -4,17 +4,18 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-import scipy.stats as sc
 import h5py
 from datetime import datetime
 
+from utils.smart_utils import apply_butter_filter, store_data, get_dir_path, load_data, make_data_description, \
+                                get_file_label_info
 from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVERLAP_COEFFICIENT, \
-    MAX_NUM_WINDOWS, FEATURE_LIST, DATA_ARRAY, LABEL_ARRAY, FEATURE_ARRAY, DATA_DESCR, GAME1
+    FEATURE_LIST, GAME1, CUT_OFF_LENGTH, MEAN_FILE_LENGTH, RAW_DATA_ARRAY, LABELS
 
 """
     The following assumptions are made:
 
-    Sampling frequency of futuro cube = 70 Hz
+    Sampling frequency of futuro cube = 20 Hz
 
     Lay-out of Excel/csv files:
     ---------------------------
@@ -22,6 +23,7 @@ from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVER
         second column       = x-axis (of accelerometer)
         third column        = y-axis
         fourth column       = z-axis
+        fifth column        = error measure (dx + dy)
 
     Label information:
     ------------------
@@ -32,39 +34,47 @@ from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVER
         filename = "20160907_roadrunner_futurocube_[ID5:0:age8]_acc.csv"
             # label info is contained in brackets [..:..] separated by dots
             # 1. ID of child/adult
-            # 2. classification/fitness label (currently binary 0 = normal, 1 = unnormal (bad)
+            # 2. classification/fitness label (currently binary 0 = normal, 1 = derailed (bad)
             # 3. age of person
+            # 4. female=0 or male=1
+            # 5. left=0   or right=1 handed
+
+
+    Sliding window approach:
+    ------------------------
+        The constant WINDOW_SIZE (specified in settings.py) determines length of window in SECONDS e.g. 6 sec
+            - window length (measured in samples) = WINDOW_SIZE * SAMPLE_FREQUENCY (device)
+            - for efficiency reasons (fft) we want the window length to be a multiple of 2
+            - the constant OVERLAP_COEFFICIENT (e.g. 0.5) determines the level of overlap between windows
+            - previous research revealed 50% to be a good factor
+            - for calculation purposes we want all our experimental data to have the same number of windows
+               therefore we use the constant MEAN_FILE_LENGTH to restrict the total length of the data (each file)
+            - we assume, that all files have nearly the same length (e.g. 2500 samples)
+            - calculating the
 """
 
 # ================================= Procedures ======================================
 
 
-def get_exprt_label(e_date, device='futurocube', game='roadrunner', sequence=1):
+def get_exprt_label(e_date, device='futurocube', game='roadrunner', s_label='', sequence=1):
 
     # centralize the construction of the experiment labelling
     # used to store and load matrices
 
-    return e_date + "_" + device + "_" + game + "_" + "s" + str(sequence)
+    return e_date + "_" + device + "_" + game + "_" + str(s_label) + "s" + str(sequence)
 
 
-def store_data_as_hdf5(f_data, l_data, out_file, features, out_loc, descr='None'):
-
+def save_one_array(d_array, out_file, out_loc):
     output_file = out_loc + out_file + ".h5"
     h5f = h5py.File(output_file, 'w')
-    h5f.create_dataset(DATA_ARRAY, data=f_data)
-    h5f.create_dataset(LABEL_ARRAY, data=l_data)
-    h5f.create_dataset(FEATURE_ARRAY, data=features)
-    h5f.create_dataset(DATA_DESCR, data=descr)
+    h5f.create_dataset(RAW_DATA_ARRAY, data=d_array)
     h5f.close()
-
-    if DEBUG_LEVEL >= 1:
-        print("INFO - Successfully saved data to %s" % output_file)
 
 
 def extract_label_info(label_list, filename, num_windows):
     # current assumption about labels, please explanations above
-    # we are only using the "fitness" indication at the moment to train the classifier
-    #
+    # we are only using the "fitness" indication which should be positioned at 2nd label position
+    # at the moment to train the classifier
 
     labels = filename[filename.index('[') + 1:filename.index(']')].split(':')
     label_list.extend([labels[1] for i in range(num_windows)])
@@ -94,7 +104,7 @@ def normalize_features(d_tensor):
 
 
 def convert_to_window_size(expt_data, win_size, overlap_coeff=OVERLAP_COEFFICIENT,
-                           max_num_windows=MAX_NUM_WINDOWS):
+                           max_num_windows=20):
     """
     Creates chunks of original raw data. Chunk size = window size
     :param expt_data:
@@ -127,7 +137,7 @@ def convert_to_window_size(expt_data, win_size, overlap_coeff=OVERLAP_COEFFICIEN
     return np.array(window_lists)
 
 
-def calculate_features(d_tensor, d_axis=1):
+def calculate_features(d_tensor, window_func=False, d_axis=1):
     """
 
     :param d_tensor:
@@ -144,13 +154,17 @@ def calculate_features(d_tensor, d_axis=1):
     dim2 = d_tensor.shape[1]  # this is the actual window size
     dim3 = d_tensor.shape[2]
 
-    maxf = np.reshape(np.amax(d_tensor, axis=d_axis), (dim1, 1, dim3))
     minf = np.reshape(np.amin(d_tensor, axis=d_axis), (dim1, 1, dim3))
+    maxf = np.reshape(np.amax(d_tensor, axis=d_axis), (dim1, 1, dim3))
     mean = np.reshape(np.mean(d_tensor, axis=d_axis), (dim1, 1, dim3))
     std = np.reshape(np.std(d_tensor, axis=d_axis), (dim1, 1, dim3))
     median = np.reshape(np.median(d_tensor, axis=d_axis), (dim1, 1, dim3))
 
     # Features of the frequency domain
+    # First, apply Hamming window in order to prevent frequency leakage
+    if window_func is not None:
+        d_tensor = d_tensor * np.reshape(window_func, (1, len(window_func), 1))
+
     fd = np.fft.fft(d_tensor, axis=1)  # frequency domain
     # DC or zero Hz component, is the first component of the N (window sample size) components
     # -----------------------
@@ -182,7 +196,7 @@ def calculate_features(d_tensor, d_axis=1):
     power_spec_entropy = np.reshape(power_spec_entropy, (dim1, 1, dim3))
 
     # concatenate the features along axis 1, which is 1 for all tensors
-    res_tensor = np.concatenate((maxf, minf, mean, std, median, dc, energy, power_spec_entropy), axis=1)
+    res_tensor = np.concatenate((minf, maxf, mean, std, median, dc, energy, power_spec_entropy), axis=1)
     if DEBUG_LEVEL >= 1:
         print("INFO - calculating features -shape of result tensor ", res_tensor.shape)
         # print(res_tensor)
@@ -190,18 +204,30 @@ def calculate_features(d_tensor, d_axis=1):
     return res_tensor
 
 
-def import_data(device, game, root_path, file_ext='csv'):
+def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=True, calc_mag=False,
+                f_type=None, lowcut=8, highcut=0.5, b_order=5,
+                apply_window_func=False, extra_label=''):
     """
         Parameters:
+            device:
+            game:
             root_path
             file_ext
-            w_size: size of sliding window in seconds (or fraction of second
+            save_raw_files
+            calc_mag: calculate the magnitude of the signal BEFORE computing the features!
+            f_type: low, high, band or None
+            lowcut:
+            highcut:
+            b_order: order of butterworth filter
+            apply_window_func
+            extra_label: a string that will be concatenated to form the filename of the
+                         output file
     """
 
     if device == GAME1:  # futurocube specific processing steps
-        sample_frequency = SAMPLE_FREQUENCY_FUTUROCUBE
+        freq = SAMPLE_FREQUENCY_FUTUROCUBE
         # for efficiency reasons make window size a multiple of 2
-        exp_2 = np.ceil(np.log2(WINDOW_SIZE * sample_frequency))
+        exp_2 = np.ceil(np.log2(WINDOW_SIZE * freq))
         window_size_samples = int(2 ** exp_2)
         feature_list = FEATURE_LIST
 
@@ -209,32 +235,51 @@ def import_data(device, game, root_path, file_ext='csv'):
         print("NOT IMPLEMENTED YET")
         quit()
 
+    # calculate the maximum length (in samples) per file
+    signal_offset = int(CUT_OFF_LENGTH * freq)
+    max_windows = np.floor(((MEAN_FILE_LENGTH - window_size_samples - signal_offset) /
+                            float(OVERLAP_COEFFICIENT * window_size_samples)) + 1)
+    max_file_length = window_size_samples + ((max_windows - 1) * OVERLAP_COEFFICIENT * window_size_samples)
     if DEBUG_LEVEL >= 1:
         print("-------------------------------------------------------------------------")
         print("INFO - Running feature calculation with the following parameter settings:")
         print("-------------------------------------------------------------------------")
         print("Game device *** %s  %s ***" % (device, game))
-        print("Assuming sample frequency of device: %d" % sample_frequency)
-        print("Calculated window size for feature extraction %d" % window_size_samples)
-        print("Length of window is approx %.2f secs" % (window_size_samples / float(sample_frequency)))
-        print("Restrict # of windows per file to %d" % MAX_NUM_WINDOWS)
+        print("Assuming sample frequency of device: %d" % freq)
+        print("Cutting off the first samples: %g" % signal_offset)
+        print("Calculated window size for feature extraction: %d" % window_size_samples)
+        print("Length of window is approx %.2f secs" % (window_size_samples / float(freq)))
+        print("Restrict # of windows per file to %d = %g seconds" % (max_windows, max_file_length))
+        print("")
+        print("Compute features based on signal magnitude %s" % calc_mag)
+        print("IMPORTANT - Applying filtering - Butterworth type %s" % f_type)
+        if f_type is not None:
+            print("Filter details lowcut/highcut/order %g/%g/%g" % (lowcut, highcut, b_order))
+        print("")
+        print("IMPORTANT - Applying window function - Hamming: %s" % apply_window_func)
         print("")
         print("List of features")
         print(feature_list)
-        print("-------------------------------------------------------------------------")
+        print("---------------------------------------------------------------------------")
         print("")
 
     # only change directory if we are not already in ../data/... path
     if os.getcwd().find('data') == -1:
         os.chdir(root_path)
     abs_dir_path = os.getcwd() + "/"
-    files_to_load = glob.glob("*." + file_ext)
+    files_to_load = glob.glob(edate + "*." + file_ext)
     if DEBUG_LEVEL >= 1:
         print("INFO - Loading accelerometer %d files from: %s" % (len(files_to_load), abs_dir_path))
     num_of_files = 0
     num_of_files_skipped = 0
     feature_data = None
     label_data = []
+    id_sequence = []
+
+    if apply_window_func:
+        hamming_w = np.hamming(window_size_samples)
+    else:
+        hamming_w = None
 
     for f_name in files_to_load:
         acc_file = os.path.join(abs_dir_path, f_name)
@@ -256,15 +301,33 @@ def import_data(device, game, root_path, file_ext='csv'):
             # remember, indexing of columns starts at 0
             expt_data = df.iloc[:, 1:4].as_matrix()
             # dimensionality of expt_data = (total number of samples, num of channels(x,y,z))
-            np_windows = convert_to_window_size(expt_data, win_size=window_size_samples)
 
+            # we assume that the beginning and the end of the raw signal contains to much
+            # noise, therefore we are cutting of a piece in the beginning and in the end
+            expt_data = expt_data[signal_offset:expt_data.shape[0] - signal_offset, :]
+            # apply a butterworth filter if specified
+            if f_type is not None:
+                # apply butterworth filter or filters
+                expt_data, _ = apply_butter_filter(expt_data, freq, lowcut, highcut, f_type, b_order)
+                if DEBUG_LEVEL >= 1:
+                    print("INFO - Dimension of tensor after filtering ", expt_data.shape)
+
+            # calculate signal magnitudes
+            if calc_mag:
+                expt_data = np.reshape(np.sqrt(expt_data[:, 0]**2 + expt_data[:, 1]**2 + expt_data[:, 2]**2),
+                                            (expt_data.shape[0], 1))
+
+            np_windows = convert_to_window_size(expt_data, win_size=window_size_samples, max_num_windows=max_windows)
+            if save_raw_files:
+                save_filename = f_name[:f_name.find(".")]
+                save_one_array(np_windows, out_file=save_filename, out_loc=abs_dir_path)
             # previous function returns a numpy array with 3 axis:
             #   axis 0 = number of windows
             #   axis 1 = number of samples per window
             #   axis 2 = number of channels, e.g. 3 for accelerometer data (x,y,z axis)
             # we are calculating the features for the tuple(window/channel-axis)
             # and therefore aggregating over axis 1 (2nd parameter to calculate_features)
-            np_windows = calculate_features(np_windows, 1)
+            np_windows = calculate_features(np_windows, window_func=hamming_w, d_axis=1)
             # concatenate the contents of the files (transformed as numpy arrays)
             if feature_data is None:
                 feature_data = np_windows
@@ -273,10 +336,13 @@ def import_data(device, game, root_path, file_ext='csv'):
                 feature_data = np.concatenate((feature_data, np_windows), axis=0)
 
             if DEBUG_LEVEL > 1:
-                print("INFO - total length=%d, num of windows=%d, samples/window=%d, channels=%d" %
+                print("INFO - total length file=%d, num of windows=%d, num of features=%d, channels=%d" %
                   (expt_data.shape[0], np_windows.shape[0], np_windows.shape[1], np_windows.shape[2]))
             # get label information
             label_data = extract_label_info(label_data, f_name, np_windows.shape[0])
+            # get dictionary with label info for this file
+            label_dict = get_file_label_info(f_name)
+            id_sequence.append(label_dict)
 
         except IOError as e:
             print('WARNING ****** Could not read:', acc_file, ':', e, '- it\'s ok, skipping. *******')
@@ -290,6 +356,34 @@ def import_data(device, game, root_path, file_ext='csv'):
     if DEBUG_LEVEL > 1:
         print("INFO - Feature data shape ", feature_data.shape, " / label data shape ", label_data.shape)
     # finally store matrices in hdf5 format
-    data_label = get_exprt_label("{:%d%m%Y}".format(datetime.now()), device, game, 1)
-    store_data_as_hdf5(feature_data, label_data, data_label, feature_list, out_loc=abs_dir_path)
-    return feature_data, label_data
+    # data_label = get_exprt_label("{:%d%m%Y}".format(datetime.now()), device, game, extra_label, 1)
+    data_label = get_exprt_label(edate, device, game, extra_label, 1)
+    d_dict = make_data_description(freq, window_size_samples, max_windows, apply_window_func, f_type,
+                                   [lowcut, highcut, b_order], num_of_files, feature_list, id_sequence=id_sequence)
+    store_data(feature_data, label_data, data_label, out_loc=abs_dir_path, descr=d_dict)
+    return feature_data, label_data, d_dict
+
+
+def get_data(e_date, device='futurocube', game='roadrunner', sequence=1, file_ext='csv', calc_mag=False,
+             apply_window_func=True, extra_label='', force=False,
+             f_type=None, lowcut=8, highcut=0.5, b_order=5):
+
+    data_label = get_exprt_label(e_date, device, game, extra_label, sequence)
+    root_dir = get_dir_path(device, game)
+    if os.getcwd().find('data') == -1:
+        os.chdir(root_dir)
+    abs_file_path = os.path.join(os.getcwd(), data_label)
+    if DEBUG_LEVEL >= 1:
+        print("INFO - Used data label %s" % data_label)
+    if os.path.isfile(abs_file_path + ".h5") and not force:
+        if DEBUG_LEVEL >= 1:
+            print("INFO Loading matrices from h5 file %s" % abs_file_path + ".h5")
+            data, labels, d_dict = load_data(abs_file_path)
+            return data, labels, d_dict
+    else:
+        if DEBUG_LEVEL >= 1:
+            print("INFO - Need to process raw data...")
+        return import_data(e_date, device, game, root_dir, file_ext, apply_window_func=apply_window_func, calc_mag=calc_mag,
+                           f_type=f_type, lowcut=lowcut, highcut=highcut, b_order=b_order,
+                           extra_label=extra_label)
+
