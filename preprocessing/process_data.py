@@ -165,11 +165,30 @@ def calculate_features(d_tensor, window_func=False, d_axis=1, low_offset=0, high
     else:
         raise ValueError("tensor has less or more than 3 dimensions: %d" % d_tensor.ndim)
 
-    minf = np.reshape(np.amin(d_tensor, axis=d_axis), (dim1, 1, dim3))
-    maxf = np.reshape(np.amax(d_tensor, axis=d_axis), (dim1, 1, dim3))
-    mean = np.reshape(np.mean(d_tensor, axis=d_axis), (dim1, 1, dim3))
-    std = np.reshape(np.std(d_tensor, axis=d_axis), (dim1, 1, dim3))
-    median = np.reshape(np.median(d_tensor, axis=d_axis), (dim1, 1, dim3))
+    res_tensor = None
+    # Envelope metrics in time domain
+    if 'minf' in FEATURE_LIST:
+        minf = np.reshape(np.amin(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = minf
+    if 'maxf' in FEATURE_LIST:
+        maxf = np.reshape(np.amax(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, maxf, axis=1)
+    if 'mean' in FEATURE_LIST:
+        mean = np.reshape(np.mean(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, mean, axis=1)
+    if 'std' in FEATURE_LIST:
+        std = np.reshape(np.std(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, std, axis=1)
+    if 'median' in FEATURE_LIST:
+        median = np.reshape(np.median(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, median, axis=1)
+    if 'range' in FEATURE_LIST:
+        range = maxf - minf
+        res_tensor = np.append(res_tensor, range, axis=1)
+
+    if 'rms' in FEATURE_LIST:
+        rms = np.reshape(np.sqrt(1/float(dim2) * np.sum(d_tensor**2, axis=d_axis)), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, rms, axis=1)
 
     # Features of the frequency domain
     # First, apply Hamming window in order to prevent frequency leakage
@@ -194,7 +213,10 @@ def calculate_features(d_tensor, window_func=False, d_axis=1, low_offset=0, high
     # DC or zero Hz component, is the first component of the N (window sample size) components
     # -----------------------
     # for each window (first axis) take the first component, reshape so we can stack later
-    dc = np.reshape(np.real(fd[:, 0]), (dim1, 1, dim3))
+    if 'dc' in FEATURE_LIST:
+        dc = np.reshape(np.real(fd[:, 0]), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, dc, axis=1)
+    print(res_tensor.shape)
     # Power Spectrum  = Power Spectral Density (PSD)
     # ----------------------------------------------
     # When computing the PS we omit the DC component
@@ -206,7 +228,9 @@ def calculate_features(d_tensor, window_func=False, d_axis=1, low_offset=0, high
     # ----------------------------------------------------
     # Questions:
     #   according to Boa et al. we need to omit the DC component, so do we need to normalize by N-1 right?
-    energy = 1/(float(dim2) - 1) * np.reshape(np.sum(np.abs(fd[:, 1:]) ** 2, axis=d_axis), (dim1, 1, dim3))
+    if 'energy' in FEATURE_LIST:
+        energy = 1/(float(dim2) - 1) * np.reshape(np.sum(np.abs(fd[:, 1:]) ** 2, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, energy, axis=1)
 
     # Power Spectral Entropy (PSE)
     # ----------------------------------
@@ -216,12 +240,15 @@ def calculate_features(d_tensor, window_func=False, d_axis=1, low_offset=0, high
     # (2) We then average again the PSE over the window size for each window/channel
     #       calculate entropy, don't use scipy.stats because we can't influence the summing over axis
     #        use numpy log function with base "e"
-    power_spec_entropy = - np.sum(norm_power_spec * np.log(norm_power_spec), axis=d_axis)
-    # (3) Reshape in order to stack features at the end
-    power_spec_entropy = np.reshape(power_spec_entropy, (dim1, 1, dim3))
+    if 'power_spec_entropy' in FEATURE_LIST:
+        power_spec_entropy = - np.sum(norm_power_spec * np.log(norm_power_spec), axis=d_axis)
+        # (3) Reshape in order to stack features at the end
+        power_spec_entropy = np.reshape(power_spec_entropy, (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, power_spec_entropy, axis=1)
 
     # concatenate the features along axis 1, which is 1 for all tensors
-    res_tensor = np.concatenate((minf, maxf, mean, std, median, dc, energy, power_spec_entropy), axis=1)
+    # res_tensor = np.concatenate((minf, maxf, mean, std, median, rms, range, dc, energy, power_spec_entropy), axis=1)
+
     if DEBUG_LEVEL >= 1:
         print("INFO - calculating features -shape of result tensor ", res_tensor.shape)
         # print(res_tensor)
@@ -429,8 +456,8 @@ def get_data(e_date, device='futurocube', game='roadrunner', file_ext='csv', cal
 
 
 # train_data, train_labels, mydict = get_data('20160921', force=False, apply_window_func=True,
-#                                            extra_label="20hz_1axis_try",
-#                                             optimal_w_size=False, calc_mag=True,
-#                                            f_type='lowhigh', lowcut=2, highcut=0.5, b_order=5)
+#                                           extra_label="20hz_1axis_try",
+#                                            optimal_w_size=False, calc_mag=True,
+#                                          f_type='lowhigh', lowcut=2, highcut=0.1, b_order=5)
 
 # res = split_on_classes(train_data, train_labels)

@@ -70,8 +70,7 @@ def plot_spectra_1axis(signal, sampling_freq, p_title, apply_window_func=False, 
     plt.title(p_title, y=1.08)
     plt.plot(frq, sig_spec_x, color='b', label=p_label)
     plt.ylabel('|Amplitude|')
-    # y_lim = np.max(sig_spec_x[1:])
-    # plt.ylim([0, y_lim + 0.1*y_lim])
+    plt.xlabel('Freq (Hz)')
     plt.legend(loc="best")
     plt.show()
 

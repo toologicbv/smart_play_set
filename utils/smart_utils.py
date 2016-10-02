@@ -10,6 +10,10 @@ from preprocessing.settings import DEBUG_LEVEL, DATA_ARRAY, LABEL_ARRAY, RAW_DAT
                                     MEAN_FILE_LENGTH, OVERLAP_COEFFICIENT, LEVEL_TIME_INTERVALS, LABELS
 
 
+def create_row_mask(row_set, length):
+    return np.array(row_set * length, dtype=bool)
+
+
 def butter_bandpass(lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
     low = lowcut / nyq

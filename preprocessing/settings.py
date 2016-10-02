@@ -15,7 +15,8 @@ SAMPLE_FREQUENCY_FUTUROCUBE = 20  # 70 Hz for futurocube according to last info 
 WINDOW_SIZE = 40                     # in seconds
 OVERLAP_COEFFICIENT = 0.5           # 50% overlap of windows, important parameter!
 MEAN_FILE_LENGTH = 2400             # in samples
-FEATURE_LIST = ['min', 'max', 'mean', 'std', 'median', 'dc', 'energy', 'power_spec_entropy']
+# ['min', 'max', 'mean', 'std', 'median', 'rms', 'range', 'dc', 'energy', 'power_spec_entropy']
+FEATURE_LIST = ['minf', 'maxf', 'mean', 'std', 'median', 'dc', 'energy', 'power_spec_entropy']
 
 LABELS = ['ID', 'CLASS', 'AGE', 'SEX', 'HANDED']
 RAW_DATA_ARRAY = 'raw_data'
