@@ -180,7 +180,7 @@ def get_array_filenames(e_date, device='futurocube', game='roadrunner', sequence
 
 
 def make_data_description(fs, w_size, num_windows, window_func, b_filter, filter_specs, num_of_files, features,
-                          id_sequence=[]):
+                          id_attributes=[]):
 
     d_dict = {
         "frequency": fs,
@@ -192,9 +192,9 @@ def make_data_description(fs, w_size, num_windows, window_func, b_filter, filter
         "num_of_files": int(num_of_files),
         "features": features,
         "cut_off_sec": CUT_OFF_LENGTH,
-        "id_sequence": id_sequence,
         "MEAN_FILE_LENGTH": MEAN_FILE_LENGTH,
         "OVERLAP_COEFFICIENT": OVERLAP_COEFFICIENT,
+        "id_attributes": id_attributes,
         "LEVEL_TIME_INTERVALS": LEVEL_TIME_INTERVALS,
         "LABELS": LABELS
         }
@@ -209,7 +209,14 @@ def get_file_label_info(filename):
 
     return file_dict
 
-# train_data, train_labels = get_data('22092016', force=False, apply_window_func=True, extra_label="20hz_10f")
+
+def split_on_classes(d_tensor, d_labels, num_classes=2):
+    res_dict = {}
+    for cls in np.arange(num_classes):
+        res_dict[cls] = d_tensor[d_labels[:, 0] == cls]
+
+    return res_dict
+
 # a = get_array_filenames('20160921', device='futurocube', game='roadrunner', sequence=1, file_ext='csv')
 
 

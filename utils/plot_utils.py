@@ -17,9 +17,9 @@ def plot_fft(signal, p_title="", apply_window_func=False):
         hamming_w = np.hamming(signal.shape[0])
     else:
         hamming_w = 1
-    sig_spec_x = 2. / n * np.abs(fft(signal[:, 0] * hamming_w, axis=0))[range(n / 2)]
-    sig_spec_y = 2. / n * np.abs(fft(signal[:, 1] * hamming_w, axis=0))[range(n / 2)]
-    sig_spec_z = 2. / n * np.abs(fft(signal[:, 2] * hamming_w, axis=0))[range(n / 2)]
+    sig_spec_x = 2. / n * np.abs(np.fft.fft(signal[:, 0] * hamming_w, axis=0))[range(n / 2)]
+    sig_spec_y = 2. / n * np.abs(np.fft.fft(signal[:, 1] * hamming_w, axis=0))[range(n / 2)]
+    sig_spec_z = 2. / n * np.abs(np.fft.fft(signal[:, 2] * hamming_w, axis=0))[range(n / 2)]
     print("shapes ", sig_spec_x.shape, frq.shape)
 
     ax1 = plt.subplot(3, 1, 1)
@@ -53,14 +53,18 @@ def plot_spectra_1axis(signal, sampling_freq, p_title, apply_window_func=False, 
     T = n/float(sampling_freq)
     frq = (k/T)[range(n/2)]     # one side frequency range
     if apply_window_func:
-        hamming_w = np.hamming(signal.shape[0])
+        hamming_w = np.reshape(np.hamming(signal.shape[0]), (signal.shape[0], 1))
     else:
         hamming_w = 1
 
-    sig_spec_x = 2. / n * np.abs(fft(signal[:, 0] * hamming_w, axis=0))[range(n / 2)]
-    if skip_dc:
+    sig_spec_x = 2. / n * np.abs(np.fft.fft(signal * hamming_w, signal.shape[0], axis=0))[range(n / 2)]
+
+    if skip_dc and not apply_window_func:
         sig_spec_x = sig_spec_x[1:]
         frq = frq[1:]
+    elif skip_dc and apply_window_func:
+        sig_spec_x = sig_spec_x[2:]
+        frq = frq[2:]
 
     plt.figure(figsize=(width, height))
     plt.title(p_title, y=1.08)
@@ -86,9 +90,9 @@ def plot_spectra_3axis(signal, sampling_freq, p_title, apply_window_func=True, s
         hamming_w = np.hamming(signal.shape[0])
     else:
         hamming_w = 1
-    sig_spec_x = 2./n * np.abs(fft(signal[:, 0] * hamming_w, axis=0))[range(n/2)]
-    sig_spec_y = 2./n * np.abs(fft(signal[:, 1] * hamming_w, axis=0))[range(n/2)]
-    sig_spec_z = 2./n * np.abs(fft(signal[:, 2] * hamming_w, axis=0))[range(n/2)]
+    sig_spec_x = 2./n * np.abs(np.fft.fft(signal[:, 0] * hamming_w, signal.shape[0], axis=0))[range(n/2)]
+    sig_spec_y = 2./n * np.abs(np.fft.fft(signal[:, 1] * hamming_w, signal.shape[0], axis=0))[range(n/2)]
+    sig_spec_z = 2./n * np.abs(np.fft.fft(signal[:, 2] * hamming_w, signal.shape[0], axis=0))[range(n/2)]
 
     if skip_dc:
         sig_spec_x = sig_spec_x[1:]
@@ -194,7 +198,8 @@ def plot_butterworth_filter(fs, lowcut=1, highcut=10, f_type='band', o_range=[2,
 
 
 def single_file_plots(r_signal, fs, lowcut=2, highcut=0.5, f_type='low', b_order=4, plot_type=3,
-                      width=20, height=10, add_to_title="", apply_w_func=False, skip_dc=False):
+                      width=20, height=10, add_to_title="", apply_w_func=False, skip_dc=False, p_legend=False,
+                      use_raw_sig=False, use_mag=False, plot_sig=[1,2]):
 
     freq = fs
     f_signal_x, p_label = apply_butter_filter(r_signal[:, 0], fs=freq, lowcut=lowcut, highcut=highcut,
@@ -205,40 +210,71 @@ def single_file_plots(r_signal, fs, lowcut=2, highcut=0.5, f_type='low', b_order
                                         f_type=f_type, order=b_order)
 
     f_signal = np.concatenate((f_signal_x, f_signal_y, f_signal_z), axis=1)
-    f_signal_m = np.reshape(np.sqrt(f_signal_x ** 2 + f_signal_y ** 2 + f_signal_z ** 2), (f_signal_z.shape[0], 1))
+    f_signal_m = np.reshape(np.sqrt(f_signal_x**2 + f_signal_y**2 + f_signal_z**2), (f_signal_z.shape[0], 1))
+    r_signal_m = np.reshape(np.sqrt(r_signal[:, 0]**2 + r_signal[:, 0]**2 + r_signal[:, 0]**2), (r_signal.shape[0], 1))
 
     if plot_type == 1:
-        p_title = add_to_title + p_label
-        plot_butter_effect_3axis(r_signal, f_signal, p_label, p_title, width=width, height=height)
+        if len(plot_sig) > 1:
+            p_title = add_to_title + p_label
+        else:
+            p_title = add_to_title
+
+        if not use_mag:
+            plot_butter_effect_3axis(r_signal, f_signal, p_title=p_title, width=width, height=height,
+                                        p_legend=p_legend, plot_sig=plot_sig)
+        else:
+            plot_butter_effect_1axis(r_signal_m, f_signal_m, p_title=p_title, label="filtered", p_legend=True,
+                                     width=width, height=height, plot_sig=plot_sig)
+
     # plot_fft(d_array_r)
     if plot_type == 2:
-        p_title = add_to_title + "Frequency spectrum (wfunc=%s/skip_dc=%s) / %s" % (apply_w_func, skip_dc, p_label)
-        plot_spectra_1axis(f_signal_m, freq, p_title,
+
+        if use_raw_sig:
+            p_title = add_to_title + "Frequency spectrum (use raw signal %s)" % use_raw_sig
+            y = r_signal_m
+        else:
+            p_title = add_to_title + "Frequency spectrum (wfunc=%s/skip_dc=%s) / %s" % (apply_w_func, skip_dc, p_label)
+            y = f_signal_m
+        plot_spectra_1axis(y, freq, p_title,
                             apply_window_func=apply_w_func, skip_dc=skip_dc,
                             width=width, height=height)
     if plot_type == 3:
-        p_title = add_to_title + "Frequency spectrum (wfunc=%s/skip_dc=%s) / %s" % (apply_w_func, skip_dc, p_label)
-        plot_spectra_3axis(r_signal, freq, p_title,
+
+        if use_raw_sig:
+            p_title = add_to_title + "Frequency spectrum (use raw signal %s)" % use_raw_sig
+            y = r_signal
+        else:
+            p_title = add_to_title + "Frequency spectrum (wfunc=%s/skip_dc=%s) / %s" % (apply_w_func, skip_dc, p_label)
+            y = f_signal
+        plot_spectra_3axis(y, freq, p_title,
                             apply_window_func=apply_w_func, skip_dc=skip_dc,
                             width=width, height=height)
 
 
-def plot_butter_effect_1axis(r_signal, f_signal, label=""):
+def plot_butter_effect_1axis(r_signal, f_signal, label="filtered", p_title="", p_legend=False, height=10, width=20,
+                                plot_sig=[1, 2]):
 
     t = np.arange(r_signal.shape[0])
-    plt.figure(1)
-    plt.clf()
-    plt.plot(t, r_signal, label='Noisy signal')
-    plt.plot(t, f_signal, label=label, color='r')
+
+    plt.figure(figsize=(width, height))
+    plt.title(p_title, y=1.08)
+
+    if 1 in plot_sig:
+        plt.plot(t, r_signal, label='original signal')
+    if 2 in plot_sig:
+        plt.plot(t, f_signal, label=label, color='r')
     plt.xlabel('time (seconds)')
     plt.grid(True)
     plt.axis('tight')
-    plt.legend(loc='best')
+    if p_legend:
+        # ax1.legend([sig1, sig2], loc="best")
+        plt.legend(loc="best")
 
     plt.show()
 
 
-def plot_butter_effect_3axis(r_signal, f_signal, label="", p_title="", p_legend=False, height=10, width=20):
+def plot_butter_effect_3axis(r_signal, f_signal, label="filtered", p_title="", p_legend=False, height=10, width=20,
+                                plot_sig=[1, 2]):
 
     r_x = r_signal[:, 0]
     r_y = r_signal[:, 1]
@@ -251,32 +287,34 @@ def plot_butter_effect_3axis(r_signal, f_signal, label="", p_title="", p_legend=
     plt.figure(figsize=(width, height))
     ax1 = plt.subplot(3, 1, 1)
     plt.title(p_title, y=1.08)
-
-    plt.plot(t, r_x, label='Noisy signal')
-    plt.plot(t, f_x, label=label, color='r')
+    if 1 in plot_sig:
+        sig1, = plt.plot(t, r_x, label='original signal')
+    if 2 in plot_sig:
+        sig2, = plt.plot(t, f_x, label=label, color='r')
     plt.xlabel('time (seconds)')
     plt.grid(True)
     plt.ylabel('|Amplitude|')
     if p_legend:
-        plt.legend(loc="best")
+        # ax1.legend([sig1, sig2], loc="best")
+        ax1.legend(loc="best")
 
     plt.subplot(3, 1, 2, sharex=ax1)
-    plt.plot(t, r_y, label='Noisy signal')
-    plt.plot(t, f_y, label=label, color='r')
+    if 1 in plot_sig:
+        plt.plot(t, r_y, label='Noisy signal')
+    if 2 in plot_sig:
+        plt.plot(t, f_y, label=label, color='r')
     plt.xlabel('time (seconds)')
     plt.grid(True)
     plt.ylabel('|Amplitude|')
-    if p_legend:
-        plt.legend(loc="best")
 
     plt.subplot(3, 1, 3, sharex=ax1)
-    plt.plot(t, r_z, label='Noisy signal')
-    plt.plot(t, f_z, label=label, color='r')
+    if 1 in plot_sig:
+        plt.plot(t, r_z, label='Noisy signal')
+    if 2 in plot_sig:
+        plt.plot(t, f_z, label=label, color='r')
     plt.xlabel('time (seconds)')
     plt.grid(True)
     plt.ylabel('|Amplitude|')
-    if p_legend:
-        plt.legend(loc="best")
 
     plt.axis('tight')
     plt.subplots_adjust(wspace=0, hspace=0)
