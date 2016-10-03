@@ -18,7 +18,7 @@ The system to be build will be mapping sensor readings from the play devices to 
 
 [Signal Processing and Filtering of Raw Accelerometer Records – Center for Geotechnical Modeling](http://cgm.engr.ucdavis.edu/library/signal-processing-and-filtering-of-raw-accelerometer-records/)
 
-[Baum Dev Blog: Butterworth Lowpass Filter Coefficients in C++](Baum Dev Blog: Butterworth Lowpass Filter Coefficients in C++)
+[Baum Dev Blog: Butterworth Lowpass Filter Coefficients in C++](http://baumdevblog.blogspot.nl/2010/11/butterworth-lowpass-filter-coefficients.html)
 
 [fft - DC component in accelerometer data - filter before or after XYZ Euclidean sum - Signal Processing Stack Exchange](http://dsp.stackexchange.com/questions/30456/dc-component-in-accelerometer-data-filter-before-or-after-xyz-euclidean-sum)
 
