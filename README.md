@@ -1,7 +1,7 @@
 # project smart_play_set
 The smart play sets project focuses on the early detection of derailment of the healthy development of motor skills in primary school children through smart play sets (e.g. the futurocube, http://www.futurocube.com/). 
 
-![alt tag](https://github.com/toologicbv/smart_play_set/images/original_foto.jpg)
+![alt tag](https://github.com/toologicbv/smart_play_set/blob/master/images/original_foto.jpg)
 
 The following parties are involved in the project 1) Digital Life Centre at HvA; 2) NYOYN, a creative company in Interactive Play products; 3) The Interaction & Play lab, a research group at HvA in the Digital Media and Creative Industry domain; 4) Knowledge Center for movement, sport & nutrition at HvA (http://www.hva.nl/mambo/). 
 
