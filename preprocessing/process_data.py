@@ -6,12 +6,13 @@ import pandas as pd
 import numpy as np
 import h5py
 from sklearn.preprocessing import normalize
+from scipy.ndimage import convolve1d
 # from datetime import datetime
 
 from utils.smart_utils import apply_butter_filter, store_data, get_dir_path, load_data, make_data_description, \
                                 get_file_label_info, split_on_classes
 from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVERLAP_COEFFICIENT, \
-    FEATURE_LIST, GAME1, CUT_OFF_LENGTH, MEAN_FILE_LENGTH, RAW_DATA_ARRAY, LABELS
+    FEATURE_LIST, GAME1, CUT_OFF_LENGTH, MEAN_FILE_LENGTH, RAW_DATA_ARRAY, LABELS, IMPORT_COLUMNS
 
 """
     The following assumptions are made:
@@ -111,7 +112,7 @@ def normalize_features(d_tensor, use_scikit=False):
     return d_tensor
 
 
-def convert_to_window_size(expt_data, win_size, overlap_coeff=OVERLAP_COEFFICIENT,
+def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLAP_COEFFICIENT,
                            max_num_windows=20):
     """
     Creates chunks of original raw data. Chunk size = window size
@@ -121,31 +122,36 @@ def convert_to_window_size(expt_data, win_size, overlap_coeff=OVERLAP_COEFFICIEN
     :param max_num_windows:
     :return:
     """
-    window_lists = []
+    window_lists1 = []
+    window_lists2 = []
     total_samples = expt_data.shape[0]
     num_samples_so_far = 0
     while num_samples_so_far < total_samples:
-        window = expt_data[num_samples_so_far:num_samples_so_far + win_size]
-        if window.shape[0] < win_size:
+        window1 = expt_data[num_samples_so_far:num_samples_so_far + win_size]
+        window2 = game_state[num_samples_so_far:num_samples_so_far + win_size]
+        if window1.shape[0] < win_size:
             break
-        window_lists.append(window)
+        window_lists1.append(window1)
+        window_lists2.append(window2)
         # remember, we want the time frames (windows) to overlap
         # previous research has revealed that a 50% overlap works well
         # whether this will work in our case as well?
         num_samples_so_far += int(win_size * overlap_coeff)
 
-    num_of_windows = len(window_lists)
+    num_of_windows = len(window_lists1)
+    # print(num_of_windows, max_num_windows)
     if num_of_windows > max_num_windows:
         # cut off some blocks
-        window_lists = window_lists[:max_num_windows]
+        window_lists1 = window_lists1[:max_num_windows]
+        window_lists2 = window_lists2[:max_num_windows]
     else:
         # if experimental data contains less than maximum num of windows
         # then we just pass what we have so far
         pass
-    return np.array(window_lists)
+    return np.array(window_lists1), np.array(window_lists2)
 
 
-def calculate_features(d_tensor, window_func=False, d_axis=1, low_offset=0, high_offset=0):
+def calculate_features(d_tensor, d_game_state, window_func=False, d_axis=1, low_offset=0, high_offset=0):
     """
 
     :param d_tensor:
@@ -190,6 +196,38 @@ def calculate_features(d_tensor, window_func=False, d_axis=1, low_offset=0, high
         rms = np.reshape(np.sqrt(1/float(dim2) * np.sum(d_tensor**2, axis=d_axis)), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, rms, axis=1)
 
+    if 'mean_squared_jerk' in FEATURE_LIST or 'int_squared_jerk' in FEATURE_LIST:
+        d_filter = np.array([1.0, -1.0], np.float32)
+        if dim3 > 1:
+            # convolve function can only take 2D tensor, so we need to convolve each dimension separately
+            signal_jerk_x = np.sum(convolve1d(np.reshape(d_tensor[:, :, 0], (dim1, dim2 * 1)),
+                                            d_filter, axis=1)**2, axis=1)
+            signal_jerk_y = np.sum(convolve1d(np.reshape(d_tensor[:, :, 1], (dim1, dim2 * 1)),
+                                            d_filter, axis=1) ** 2, axis=1)
+            signal_jerk_z = np.sum(convolve1d(np.reshape(d_tensor[:, :, 2], (dim1, dim2 * 1)),
+                                            d_filter, axis=1) ** 2, axis=1)
+            m_sq_jerk_x = 1/float(dim2) *  np.reshape(signal_jerk_x, (dim1, 1, 1))
+            m_sq_jerk_y = 1/float(dim2) * np.reshape(signal_jerk_y, (dim1, 1, 1))
+            m_sq_jerk_z = 1/float(dim2) * np.reshape(signal_jerk_z, (dim1, 1, 1))
+
+            mean_sq_jerk = np.concatenate((m_sq_jerk_x, m_sq_jerk_y, m_sq_jerk_z), axis=2)
+            int_mean_jerk = np.concatenate((signal_jerk_x, signal_jerk_y, signal_jerk_z), axis=2)
+
+
+        else:
+            signal_jerk = np.sum(convolve1d(np.reshape(d_tensor, (dim1, dim2 * dim3)), d_filter, axis=1)**2,
+                                    axis=1)
+            int_mean_jerk = np.reshape(signal_jerk, (dim1, 1, 1))
+            mean_sq_jerk = 1 / float(dim2) * int_mean_jerk
+
+        if 'mean_squared_jerk' in FEATURE_LIST:
+            res_tensor = np.append(res_tensor, mean_sq_jerk, axis=1)
+        if 'int_squared_jerk' in FEATURE_LIST:
+            res_tensor = np.append(res_tensor, int_mean_jerk, axis=1)
+
+    ###############################################################################################
+    #                            NOTE FREQUENCY DOMAIN FEATURES                                   #
+
     # Features of the frequency domain
     # First, apply Hamming window in order to prevent frequency leakage
     if window_func is not None:
@@ -216,7 +254,7 @@ def calculate_features(d_tensor, window_func=False, d_axis=1, low_offset=0, high
     if 'dc' in FEATURE_LIST:
         dc = np.reshape(np.real(fd[:, 0]), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, dc, axis=1)
-    print(res_tensor.shape)
+
     # Power Spectrum  = Power Spectral Density (PSD)
     # ----------------------------------------------
     # When computing the PS we omit the DC component
@@ -246,8 +284,14 @@ def calculate_features(d_tensor, window_func=False, d_axis=1, low_offset=0, high
         power_spec_entropy = np.reshape(power_spec_entropy, (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, power_spec_entropy, axis=1)
 
-    # concatenate the features along axis 1, which is 1 for all tensors
-    # res_tensor = np.concatenate((minf, maxf, mean, std, median, rms, range, dc, energy, power_spec_entropy), axis=1)
+    ###############################################################################################
+    #                            GAME STATE FEATURES                                              #
+    if 'dxdy_error' in FEATURE_LIST:
+
+        error_measure = np.reshape(np.sum(d_game_state[:, :, 0]**2, axis=d_axis), (d_game_state.shape[0], 1, 1))
+        res_tensor = np.append(res_tensor, error_measure, axis=1)
+        # u_values, u_counts = np.unique(error_measure, return_counts=True)
+        # print("error_measure unique counts ", u_values, u_counts)
 
     if DEBUG_LEVEL >= 1:
         print("INFO - calculating features -shape of result tensor ", res_tensor.shape)
@@ -295,6 +339,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
     signal_offset = int(CUT_OFF_LENGTH * freq)
     max_windows = np.floor(((MEAN_FILE_LENGTH - window_size_samples - signal_offset) /
                             float(OVERLAP_COEFFICIENT * window_size_samples)) + 1)
+    max_windows = int(max_windows)
     max_file_length = window_size_samples + ((max_windows - 1) * OVERLAP_COEFFICIENT * window_size_samples)
     if DEBUG_LEVEL >= 1:
         print("-------------------------------------------------------------------------")
@@ -355,7 +400,11 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
             # convert the pandas dataframe to a numpy array
             # currently assuming that the dataframe columns 1 = x-axis, 2 = y-axis, 3 = z-axis
             # remember, indexing of columns starts at 0
+            df.columns = IMPORT_COLUMNS
+            df.loc[df.dxdy_error > 20, 'dxdy_error'] = np.abs((df.dxdy_error - 2**16))
             expt_data = df.iloc[:, 1:4].as_matrix()
+            # assuming that after the first four columns (package_id, x, y, z) we store the game state info
+            game_state_dta = df.iloc[:, 4:].as_matrix()
             # dimensionality of expt_data = (total number of samples, num of channels(x,y,z))
 
             # we assume that the beginning and the end of the raw signal contains to much
@@ -378,30 +427,32 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
                                             (expt_data.shape[0], 1))
 
             # segmentation of signal based on sliding window approach
-            np_windows = convert_to_window_size(expt_data, win_size=window_size_samples, max_num_windows=max_windows)
+            np_signal, np_game_state = convert_to_window_size(expt_data, game_state_dta, win_size=window_size_samples,
+                                                                max_num_windows=max_windows)
             if save_raw_files:
                 save_filename = f_name[:f_name.find(".")]
-                save_one_array(np_windows, out_file=save_filename, out_loc=abs_dir_path)
+                save_one_array(np_signal, out_file=save_filename, out_loc=abs_dir_path)
             # previous function returns a numpy array with 3 axis:
             #   axis 0 = number of windows
             #   axis 1 = number of samples per window
             #   axis 2 = number of channels, e.g. 3 for accelerometer data (x,y,z axis)
             # we are calculating the features for the tuple(window/channel-axis)
             # and therefore aggregating over axis 1 (2nd parameter to calculate_features)
-            np_windows = calculate_features(np_windows, window_func=hamming_w, d_axis=1, low_offset=low_offset,
+            m_features = calculate_features(np_signal, np_game_state, window_func=hamming_w, d_axis=1,
+                                            low_offset=low_offset,
                                             high_offset=high_offset)
             # concatenate the contents of the files (transformed as numpy arrays)
             if feature_data is None:
-                feature_data = np_windows
+                feature_data = m_features
             else:
                 # Concatenate along axis 0...the windows
-                feature_data = np.concatenate((feature_data, np_windows), axis=0)
+                feature_data = np.concatenate((feature_data, m_features), axis=0)
 
             if DEBUG_LEVEL > 1:
                 print("INFO - total length file=%d, num of windows=%d, num of features=%d, channels=%d" %
-                  (expt_data.shape[0], np_windows.shape[0], np_windows.shape[1], np_windows.shape[2]))
+                  (expt_data.shape[0], m_features.shape[0], m_features.shape[1], m_features.shape[2]))
             # get label information
-            label_data = extract_label_info(label_data, f_name, np_windows.shape[0])
+            label_data = extract_label_info(label_data, f_name, m_features.shape[0])
             # get dictionary with label info for this file
             label_dict = get_file_label_info(f_name)
             id_attributes.append(label_dict)
@@ -455,9 +506,9 @@ def get_data(e_date, device='futurocube', game='roadrunner', file_ext='csv', cal
                            extra_label=extra_label, optimal_w_size=optimal_w_size)
 
 
-# train_data, train_labels, mydict = get_data('20160921', force=False, apply_window_func=True,
-#                                           extra_label="20hz_1axis_try",
-#                                            optimal_w_size=False, calc_mag=True,
-#                                          f_type='lowhigh', lowcut=2, highcut=0.1, b_order=5)
+#train_data, train_labels, mydict = get_data('20160921', force=False, apply_window_func=True,
+#                                          extra_label="20hz_1axis_try",
+#                                           optimal_w_size=False, calc_mag=True,
+#                                         f_type='lowhigh', lowcut=2, highcut=0.1, b_order=5)
 
 # res = split_on_classes(train_data, train_labels)

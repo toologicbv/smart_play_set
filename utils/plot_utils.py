@@ -196,22 +196,28 @@ def plot_butterworth_filter(fs, lowcut=1, highcut=10, f_type='band', o_range=[2,
     plt.show()
 
 
-def single_file_plots(r_signal, fs, lowcut=2, highcut=0.5, f_type='low', b_order=4, plot_type=3,
+def single_file_plots(r_signal, fs, lowcut=2, highcut=0.5, f_type=None, b_order=4, plot_type=3,
                       width=20, height=10, add_to_title="", apply_w_func=False, skip_dc=False, p_legend=False,
                       use_raw_sig=False, use_mag=False, plot_sig=[1,2]):
 
     freq = fs
-    f_signal_x, p_label = apply_butter_filter(r_signal[:, 0], fs=freq, lowcut=lowcut, highcut=highcut,
-                                              f_type=f_type, order=b_order)
-    f_signal_y, _ = apply_butter_filter(r_signal[:, 1], fs=freq, lowcut=lowcut, highcut=highcut,
-                                        f_type=f_type, order=b_order)
-    f_signal_z, _ = apply_butter_filter(r_signal[:, 2], fs=freq, lowcut=lowcut, highcut=highcut,
-                                        f_type=f_type, order=b_order)
 
-    f_signal = np.concatenate((f_signal_x, f_signal_y, f_signal_z), axis=1)
-    f_signal_m = np.reshape(np.sqrt(f_signal_x**2 + f_signal_y**2 + f_signal_z**2), (f_signal_z.shape[0], 1))
+    if f_type is not None:
+        f_signal_x, p_label = apply_butter_filter(r_signal[:, 0], fs=freq, lowcut=lowcut, highcut=highcut,
+                                                  f_type=f_type, order=b_order)
+        f_signal_y, _ = apply_butter_filter(r_signal[:, 1], fs=freq, lowcut=lowcut, highcut=highcut,
+                                            f_type=f_type, order=b_order)
+        f_signal_z, _ = apply_butter_filter(r_signal[:, 2], fs=freq, lowcut=lowcut, highcut=highcut,
+                                            f_type=f_type, order=b_order)
+
+        f_signal = np.concatenate((f_signal_x, f_signal_y, f_signal_z), axis=1)
+        f_signal_m = np.reshape(np.sqrt(f_signal_x**2 + f_signal_y**2 + f_signal_z**2), (f_signal_z.shape[0], 1))
+
+    else:
+        p_label = "No filtering"
+
     r_signal_m = np.reshape(np.sqrt(r_signal[:, 0]**2 + r_signal[:, 0]**2 + r_signal[:, 0]**2), (r_signal.shape[0], 1))
-
+    print(p_label)
     if plot_type == 1:
         if len(plot_sig) > 1:
             p_title = add_to_title + p_label
