@@ -9,3 +9,24 @@ The system to be build will be mapping sensor readings from the play devices to 
 
 ### Digital signal processing
 [Digital Signal Processing](http://www.dspguide.com/)
+
+[Understanding FFTs and Windowing - National Instruments](http://www.ni.com/white-paper/4844/en/#toc2)
+
+[Python jerk measure implementation](https://github.com/danielmurray/adaptiv)
+
+[Signal Processing, Filtering & Fourier Transform Page](http://www.vibrationdata.com/signal.htm)
+
+[Signal Processing and Filtering of Raw Accelerometer Records – Center for Geotechnical Modeling](http://cgm.engr.ucdavis.edu/library/signal-processing-and-filtering-of-raw-accelerometer-records/)
+
+[Baum Dev Blog: Butterworth Lowpass Filter Coefficients in C++](http://baumdevblog.blogspot.nl/2010/11/butterworth-lowpass-filter-coefficients.html)
+
+[fft - DC component in accelerometer data - filter before or after XYZ Euclidean sum - Signal Processing Stack Exchange](http://dsp.stackexchange.com/questions/30456/dc-component-in-accelerometer-data-filter-before-or-after-xyz-euclidean-sum)
+
+
+
+#### Discrete Fourier Transform
+
+[video - Simple(?) Step by Step](https://www.youtube.com/watch?v=mkGsMWi_j4Q)
+
+[python - How to plot frequency spectrum?](http://glowingpython.blogspot.nl/2011/08/how-to-plot-frequency-spectrum-with.html)
+
