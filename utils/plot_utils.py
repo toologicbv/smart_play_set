@@ -63,8 +63,8 @@ def plot_spectra_1axis(signal, sampling_freq, p_title, apply_window_func=False, 
         sig_spec_x = sig_spec_x[1:]
         frq = frq[1:]
     elif skip_dc and apply_window_func:
-        sig_spec_x = sig_spec_x[2:]
-        frq = frq[2:]
+        sig_spec_x = sig_spec_x[1:]
+        frq = frq[1:]
 
     plt.figure(figsize=(width, height))
     plt.title(p_title, y=1.08)
@@ -212,12 +212,17 @@ def single_file_plots(r_signal, fs, lowcut=2, highcut=0.5, f_type=None, b_order=
 
         f_signal = np.concatenate((f_signal_x, f_signal_y, f_signal_z), axis=1)
         f_signal_m = np.reshape(np.sqrt(f_signal_x**2 + f_signal_y**2 + f_signal_z**2), (f_signal_z.shape[0], 1))
-
+        f_msg = p_label
     else:
-        p_label = "No filtering"
+        f_msg = "No filtering"
 
     r_signal_m = np.reshape(np.sqrt(r_signal[:, 0]**2 + r_signal[:, 0]**2 + r_signal[:, 0]**2), (r_signal.shape[0], 1))
-    print(p_label)
+    if apply_w_func:
+        f_msg += " apply Hamming-W"
+    else:
+        pass
+
+    print(f_msg)
     if plot_type == 1:
         if len(plot_sig) > 1:
             p_title = add_to_title + p_label
@@ -233,6 +238,7 @@ def single_file_plots(r_signal, fs, lowcut=2, highcut=0.5, f_type=None, b_order=
 
     # plot_fft(d_array_r)
     if plot_type == 2:
+        # Only plotting magnitude frequency spectrum
 
         if use_raw_sig:
             p_title = add_to_title + "Frequency spectrum (use raw signal %s)" % use_raw_sig
