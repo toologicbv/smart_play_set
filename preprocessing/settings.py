@@ -13,7 +13,7 @@ SAMPLE_FREQUENCY_FUTUROCUBE = 20  # 70 Hz for futurocube according to last info 
 
 # if we want to calculate the features for one window across the whole file length
 # we need to approximate "exp_2 = np.floor(np.log2(WINDOW_SIZE * freq))"
-WINDOW_SIZE = 10                     # in seconds
+WINDOW_SIZE = 40                     # in seconds
 OVERLAP_COEFFICIENT = 0.5           # 50% overlap of windows, important parameter!
 MEAN_FILE_LENGTH = 2400             # in samples
 # ['min', 'max', 'mean', 'std', 'median', 'rms', 'range', 'dc', 'energy', 'power_spec_entropy']
