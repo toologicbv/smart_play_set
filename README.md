@@ -34,4 +34,4 @@ The system to be build will be mapping sensor readings from the play devices to 
 [python - How to plot frequency spectrum?](http://glowingpython.blogspot.nl/2011/08/how-to-plot-frequency-spectrum-with.html)
 
 #### Fotos of cube 
-[Illustrating how deviation from optimal path is calculated due to accelerometer measures](https://github.com/toologicbv/smart_play_set/blob/master/docs/cube_up3.jpg)
+[Illustrating how deviation from optimal path is calculated due to accelerometer measures](https://github.com/toologicbv/smart_play_set/blob/master/images/cubev1.jpg)
