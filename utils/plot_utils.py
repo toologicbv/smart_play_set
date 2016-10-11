@@ -7,6 +7,7 @@ from scipy.signal import freqz
 
 import numpy as np
 from scipy import fft, arange
+from scipy.signal import hamming
 
 
 def plot_fft(signal, p_title="", apply_window_func=False):
@@ -53,18 +54,26 @@ def plot_spectra_1axis(signal, sampling_freq, p_title, apply_window_func=False, 
     T = n/float(sampling_freq)
     frq = (k/T)[range(n/2)]     # one side frequency range
     if apply_window_func:
-        hamming_w = np.reshape(np.hamming(signal.shape[0]), (signal.shape[0], 1))
+        hamming_w = np.reshape(hamming(signal.shape[0]), (signal.shape[0], 1))
     else:
         hamming_w = 1
 
     sig_spec_x = 2. / n * np.abs(np.fft.fft(signal * hamming_w, signal.shape[0], axis=0))[range(n / 2)]
 
     if skip_dc and not apply_window_func:
+        print("Note")
+        print("FFT without hamming window - first 4 freq coefficients: %.3f/%.3f/%.3f/%.3f" %
+              (sig_spec_x[0], sig_spec_x[1], sig_spec_x[2], sig_spec_x[3]))
         sig_spec_x = sig_spec_x[1:]
         frq = frq[1:]
+
     elif skip_dc and apply_window_func:
+        print("Note")
+        print("FFT with hamming window - first 4 freq coefficients: %.3f/%.3f/%.3f/%.3f" %
+              (sig_spec_x[0], sig_spec_x[1], sig_spec_x[2], sig_spec_x[3]))
         sig_spec_x = sig_spec_x[1:]
         frq = frq[1:]
+
 
     plt.figure(figsize=(width, height))
     plt.title(p_title, y=1.08)
@@ -202,21 +211,28 @@ def single_file_plots(r_signal, fs, lowcut=2, highcut=0.5, f_type=None, b_order=
 
     freq = fs
 
+
     if f_type is not None:
         f_signal_x, p_label = apply_butter_filter(r_signal[:, 0], fs=freq, lowcut=lowcut, highcut=highcut,
                                                   f_type=f_type, order=b_order)
+        # print("r_signal[0:5, 0] ", r_signal[0:5, 0])
+        # print("f_signal_x[0:5] ", f_signal_x[0:5])
         f_signal_y, _ = apply_butter_filter(r_signal[:, 1], fs=freq, lowcut=lowcut, highcut=highcut,
                                             f_type=f_type, order=b_order)
+        # print("r_signal[0:5, 1] ", r_signal[0:5, 1])
+        # print("f_signaly[0:5] ", f_signal_y[0:5])
         f_signal_z, _ = apply_butter_filter(r_signal[:, 2], fs=freq, lowcut=lowcut, highcut=highcut,
                                             f_type=f_type, order=b_order)
-
+        # print("r_signal[0:5, 2] ", r_signal[0:5, 2])
+        # print("f_signal_z[0:5] ", f_signal_z[0:5])
         f_signal = np.concatenate((f_signal_x, f_signal_y, f_signal_z), axis=1)
         f_signal_m = np.reshape(np.sqrt(f_signal_x**2 + f_signal_y**2 + f_signal_z**2), (f_signal_z.shape[0], 1))
         f_msg = p_label
     else:
         f_msg = "No filtering"
 
-    r_signal_m = np.reshape(np.sqrt(r_signal[:, 0]**2 + r_signal[:, 0]**2 + r_signal[:, 0]**2), (r_signal.shape[0], 1))
+    r_signal_m = np.reshape(np.sqrt(r_signal[:, 0]**2 + r_signal[:, 1]**2 + r_signal[:, 2]**2), (r_signal.shape[0], 1))
+
     if apply_w_func:
         f_msg += " apply Hamming-W"
     else:
