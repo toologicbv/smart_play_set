@@ -82,8 +82,10 @@ def apply_butter_filter(signal, fs, lowcut, highcut, f_type, order):
         y = butter_highpass_filter(signal, highcut, fs, order=order)
         p_label = 'Filtered signal (low/high: %g/%g Hz order %d)' % (lowcut, highcut, order)
 
+    if signal.ndim == 1:
+        y = np.reshape(y, (signal.shape[0], -1))
     if signal.ndim <= 2:
-        y = np.reshape(y, (signal.shape[0], 1))
+        y = np.reshape(y, (signal.shape[0], signal.shape[1]))
     elif signal.ndim == 3:
         y = np.reshape(y, (signal.shape[0], signal.shape[1], signal.shape[2]))
     else:

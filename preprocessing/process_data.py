@@ -234,19 +234,21 @@ def calculate_features(d_tensor, d_game_state, window_func=False, d_axis=1, low_
         d_tensor = d_tensor * np.reshape(window_func, (1, len(window_func), 1))
 
     fd = np.fft.fft(d_tensor, axis=1)  # frequency domain
+
+    # NOTE ==>> CURRENTLY INACTIVE
     # now skip fft coefficients that are outside of the low/high pass filter
-    if low_offset != 0 or high_offset != 0:
-        if low_offset != 0:
-            fd = fd[:, 0:low_offset, :]
-            dim2 = fd.shape[1]
+    # if low_offset != 0 or high_offset != 0:
+    #     if low_offset != 0:
+    #         fd = fd[:, 0:low_offset, :]
+    #         dim2 = fd.shape[1]
+    #
+    #     if high_offset != 0:
+    #         fd = fd[:, high_offset:, :]
+    #         dim2 = fd.shape[1]
 
-        if high_offset != 0:
-            fd = fd[:, high_offset:, :]
-            dim2 = fd.shape[1]
-
-    else:
-        # no butterworth filtering
-        pass
+    # else:
+    #    # no butterworth filtering
+    #    pass
 
     # DC or zero Hz component, is the first component of the N (window sample size) components
     # -----------------------
@@ -337,8 +339,13 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
 
     # calculate the maximum length (in samples) per file
     signal_offset = int(CUT_OFF_LENGTH * freq)
-    max_windows = np.floor(((MEAN_FILE_LENGTH - window_size_samples - signal_offset) /
-                            float(OVERLAP_COEFFICIENT * window_size_samples)) + 1)
+    if OVERLAP_COEFFICIENT != 1:
+        max_windows = np.floor(((MEAN_FILE_LENGTH - window_size_samples - signal_offset) /
+                                float(OVERLAP_COEFFICIENT * window_size_samples)) + 1)
+    else:
+        # OVERLAP_COEFFICIENT = 0, means no sliding window approach
+        max_windows = np.floor(MEAN_FILE_LENGTH / float(window_size_samples))
+
     max_windows = int(max_windows)
     max_file_length = window_size_samples + ((max_windows - 1) * OVERLAP_COEFFICIENT * window_size_samples)
     if DEBUG_LEVEL >= 1:
@@ -346,7 +353,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
         print("INFO - Running feature calculation with the following parameter settings:")
         print("-------------------------------------------------------------------------")
         print("Game device *** %s  %s ***" % (device, game))
-        print("Assuming sample frequency of device: %d" % freq)
+        print("Assuming sample frequency of device: %.2f" % freq)
         print("Cutting off the first samples: %g" % signal_offset)
         print("Calculated window size for feature extraction: %d" % window_size_samples)
         print("Length of window is approx %.2f secs" % (window_size_samples / float(freq)))
@@ -483,7 +490,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
 
 def get_data(e_date, device='futurocube', game='roadrunner', file_ext='csv', calc_mag=False,
              apply_window_func=True, extra_label='', force=False,
-             f_type=None, lowcut=8, highcut=0.5, b_order=5, optimal_w_size=True):
+             f_type=None, lowcut=8, highcut=0., b_order=5, optimal_w_size=True):
 
     data_label = get_exprt_label(e_date, device, game, extra_label)
     root_dir = get_dir_path(device, game)
@@ -506,9 +513,9 @@ def get_data(e_date, device='futurocube', game='roadrunner', file_ext='csv', cal
                            extra_label=extra_label, optimal_w_size=optimal_w_size)
 
 
-#train_data, train_labels, mydict = get_data('20160921', force=False, apply_window_func=True,
-#                                          extra_label="20hz_1axis_try",
-#                                           optimal_w_size=False, calc_mag=True,
-#                                         f_type='lowhigh', lowcut=2, highcut=0.1, b_order=5)
+# train_data, train_labels, mydict = get_data('20160921', force=False, apply_window_func=True,
+#                                          extra_label="20hz_1axis_low8hz",
+#                                          optimal_w_size=False, calc_mag=True,
+#                                          f_type='low', lowcut=8, b_order=5)
 
 # res = split_on_classes(train_data, train_labels)
