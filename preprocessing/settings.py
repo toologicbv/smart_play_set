@@ -17,7 +17,8 @@ WINDOW_SIZE = 40                     # in seconds
 OVERLAP_COEFFICIENT = 1          # 50% overlap of windows, important parameter!
                                  # 1 means no sliding window approach, can be used for hard cuts
 MEAN_FILE_LENGTH = 2460             # in samples
-# ['min', 'max', 'mean', 'std', 'median', 'rms', 'range', 'dc', 'energy', 'power_spec_entropy', "dxdy_error"]
+# ['min', 'max', 'mean', 'std', 'median', 'rms', 'range', 'dc', 'energy', 'power_spec_entropy',
+#           'dominant freq', "dxdy_error"]
 FEATURE_LIST = ['minf', 'maxf', 'mean', 'std', 'median', 'range', 'rms', 'mean_squared_jerk', 'dc',
                 'energy', 'power_spec_entropy']
 

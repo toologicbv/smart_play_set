@@ -84,7 +84,8 @@ def apply_butter_filter(signal, fs, lowcut, highcut, f_type, order):
 
     if signal.ndim == 1:
         y = np.reshape(y, (signal.shape[0], -1))
-    if signal.ndim <= 2:
+    elif signal.ndim <= 2:
+        print(signal.ndim)
         y = np.reshape(y, (signal.shape[0], signal.shape[1]))
     elif signal.ndim == 3:
         y = np.reshape(y, (signal.shape[0], signal.shape[1], signal.shape[2]))

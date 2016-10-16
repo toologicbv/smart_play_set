@@ -151,7 +151,8 @@ def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLA
     return np.array(window_lists1), np.array(window_lists2)
 
 
-def calculate_features(d_tensor, d_game_state, window_func=False, d_axis=1, low_offset=0, high_offset=0):
+def calculate_features(d_tensor, d_game_state, freq_bins, window_func=False, d_axis=1,
+                            low_offset=0, high_offset=0):
     """
 
     :param d_tensor:
@@ -286,6 +287,17 @@ def calculate_features(d_tensor, d_game_state, window_func=False, d_axis=1, low_
         power_spec_entropy = np.reshape(power_spec_entropy, (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, power_spec_entropy, axis=1)
 
+    if 'dominant freq' in FEATURE_LIST:
+        if window_func is not None:
+            freq_offset = 2 # skip DC + 1 freq components (still a mystery why 2nd is so large
+        else:
+            freq_offset = 1
+
+        # because skipping DC (+1) component we also need to skip first bins
+        freq_b = freq_bins[freq_offset:]
+        dominant_freq = freq_b[np.argmax(np.abs(fd[:, freq_offset:(dim2/2)]), axis=d_axis)]
+        dominant_freq = np.reshape(dominant_freq, (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, dominant_freq, axis=1)
     ###############################################################################################
     #                            GAME STATE FEATURES                                              #
     if 'dxdy_error' in FEATURE_LIST:
@@ -347,6 +359,8 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
         max_windows = np.floor(MEAN_FILE_LENGTH / float(window_size_samples))
 
     max_windows = int(max_windows)
+    freq_bins = np.fft.fftfreq(window_size_samples, 1/freq)[:window_size_samples/2]
+    # print(freq_bins)
     max_file_length = window_size_samples + ((max_windows - 1) * OVERLAP_COEFFICIENT * window_size_samples)
     if DEBUG_LEVEL >= 1:
         print("-------------------------------------------------------------------------")
@@ -447,7 +461,8 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
             # and therefore aggregating over axis 1 (2nd parameter to calculate_features)
             m_features = calculate_features(np_signal, np_game_state, window_func=hamming_w, d_axis=1,
                                             low_offset=low_offset,
-                                            high_offset=high_offset)
+                                            high_offset=high_offset,
+                                            freq_bins=freq_bins)
             # concatenate the contents of the files (transformed as numpy arrays)
             if feature_data is None:
                 feature_data = m_features

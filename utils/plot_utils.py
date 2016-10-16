@@ -112,19 +112,19 @@ def plot_spectra_3axis(signal, sampling_freq, p_title, apply_window_func=True, s
     ax1 = plt.subplot(3, 1, 1)
     plt.title(p_title, y=1.08)
     plt.plot(frq, sig_spec_x, color='r', label='x-axis')
-    plt.ylabel('|Amplitude|')
+    plt.ylabel('|Amplitude (1g=256)|')
     plt.legend(loc="best")
     plt.subplot(3, 1, 2, sharex=ax1)
 
     # plt.title('signal y-axis')
     plt.plot(frq, sig_spec_y, color='g', label='y-axis')
-    plt.ylabel('|Amplitude|')
+    plt.ylabel('|Amplitude (1g=256)|')
     plt.legend(loc="best")
     plt.subplot(3, 1, 3, sharex=ax1)
     # plt.title('signal z-axis')
     plt.plot(frq, sig_spec_z, color='k', label='z-axis')
     plt.xlabel('Freq (Hz)')
-    plt.ylabel('|Amplitude|')
+    plt.ylabel('|Amplitude (1g=256)|')
     plt.legend(loc="best")
     plt.subplots_adjust(wspace=0, hspace=0)
     plt.show()
@@ -290,7 +290,8 @@ def plot_butter_effect_1axis(r_signal, f_signal, label="filtered", p_title="", p
         plt.plot(t, r_signal, label='original signal')
     if 2 in plot_sig:
         plt.plot(t, f_signal, label=label, color='r')
-    plt.xlabel('time (seconds)')
+    plt.xlabel('time (1sec=21)')
+    plt.ylabel('|Amplitude (1g=256)|')
     plt.grid(True)
     plt.axis('tight')
     if p_legend:
@@ -318,9 +319,9 @@ def plot_butter_effect_3axis(r_signal, f_signal, label="filtered", p_title="", p
         sig1, = plt.plot(t, r_x, label='original signal')
     if 2 in plot_sig:
         sig2, = plt.plot(t, f_x, label=label, color='r')
-    plt.xlabel('time (seconds)')
+    plt.xlabel('time (1sec=21)')
     plt.grid(True)
-    plt.ylabel('|Amplitude|')
+    plt.ylabel('|Amplitude (1g=256)|')
     if p_legend:
         # ax1.legend([sig1, sig2], loc="best")
         ax1.legend(loc="best")
@@ -330,18 +331,18 @@ def plot_butter_effect_3axis(r_signal, f_signal, label="filtered", p_title="", p
         plt.plot(t, r_y, label='Noisy signal')
     if 2 in plot_sig:
         plt.plot(t, f_y, label=label, color='r')
-    plt.xlabel('time (seconds)')
+    plt.xlabel('time (1sec=21))')
     plt.grid(True)
-    plt.ylabel('|Amplitude|')
+    plt.ylabel('|Amplitude (1g=256)|')
 
     plt.subplot(3, 1, 3, sharex=ax1)
     if 1 in plot_sig:
         plt.plot(t, r_z, label='Noisy signal')
     if 2 in plot_sig:
         plt.plot(t, f_z, label=label, color='r')
-    plt.xlabel('time (seconds)')
+    plt.xlabel('time (1sec=21)')
     plt.grid(True)
-    plt.ylabel('|Amplitude|')
+    plt.ylabel('|Amplitude (1g=256)|')
 
     plt.axis('tight')
     plt.subplots_adjust(wspace=0, hspace=0)
