@@ -36,4 +36,4 @@ The first experiments were held in September 2016 and the preliminary version of
 [python - How to plot frequency spectrum?](http://glowingpython.blogspot.nl/2011/08/how-to-plot-frequency-spectrum-with.html)
 
 #### Fotos of cube 
-[Illustrating how deviation from optimal path is calculated due to accelerometer measures](https://github.com/toologicbv/smart_play_set/blob/master/images/cubev1.jpg)
+[Illustrating how the deviation from an optimal trail is calculated](https://github.com/toologicbv/smart_play_set/blob/master/images/deviation_v4.jpg)
