@@ -9,7 +9,7 @@ The play sets are on the one hand capable to provide a high level diagnosis thro
 
 The system to be build will be mapping sensor readings from the play devices to an assessment of the motor skills of the child playing a game. This assessment is used to generate a report on the child's progress for the teacher and to provide direct feedback to the child by steering the course of the game in such a way that the child gets to exercise the relevant motor skills.
 
-The first experiments were held in September 2016 and the preliminary version of the resport can be found [here](https://github.com/toologicbv/smart_play_set/blob/master/docs/smart_play_set_paper_v3.pdf)
+The first experiments were held in September 2016 and the preliminary version of the resport can be found [here](https://github.com/toologicbv/smart_play_set/blob/master/docs/smart_play_set_paper_v4.pdf)
 
 
 ### Digital signal processing
