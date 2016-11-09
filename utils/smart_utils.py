@@ -4,7 +4,9 @@ import pandas as pd
 import os
 import glob
 import json
+from collections import OrderedDict
 from scipy.signal import butter, lfilter
+from scipy.spatial.distance import cosine
 from data.config import config
 from preprocessing.settings import DEBUG_LEVEL, DATA_ARRAY, LABEL_ARRAY, RAW_DATA_ARRAY, CUT_OFF_LENGTH, \
                                     MEAN_FILE_LENGTH, OVERLAP_COEFFICIENT, LEVEL_TIME_INTERVALS, LABELS
@@ -224,6 +226,112 @@ def split_on_classes(d_tensor, d_labels, num_classes=2):
 
     return res_dict
 
+
+def calc_cos_sim(v1, v2):
+    return cosine(v1, v2)
+
+
+class FuturoCube(object):
+
+    def __init__(self):
+        # futuro map coordinates based on figure 2 in pawn futuro cube documentation
+
+        self.f_map_raw = {
+            # middle level of cube z = 0
+            39: (-1,    1.5,    0),
+            40: (0,     1.5,    0),
+            41: (1.,    1.5,    0),
+            28: (1.5,   1.,     0),
+            31: (1.5,   0.,     0),
+            34: (1.5,   -1.,    0),
+            50: (1.,    -1.5,   0),
+            49: (0,     -1.5,   0),
+            48: (-1.,   -1.5,   0),
+            25: (-1.5, -1.,     0),
+            22: (-1.5,  0,      0),
+            19: (-1.5,  1.,     0),
+            # upper level of cube z = 1
+            42: (-1, 1.5, 1.),
+            43: (0, 1.5, 1.),
+            44: (1., 1.5, 1.),
+            27: (1.5, 1., 1.),
+            30: (1.5, 0., 1.),
+            33: (1.5, -1., 1.),
+            47: (1., -1.5, 1.),
+            46: (0, -1.5, 1.),
+            45: (-1., -1.5, 1.),
+            26: (-1.5, -1., 1.),
+            23: (-1.5, 0, 1.),
+            20: (-1.5, 1., 1.),
+            # lower level of cube z = -1
+            36: (-1, 1.5, -1.),
+            37: (0, 1.5, -1.),
+            38: (1., 1.5, -1.),
+            29: (1.5, 1., -1.),
+            32: (1.5, 0., -1.),
+            35: (1.5, -1., -1.),
+            53: (1., -1.5, -1.),
+            52: (0, -1.5, -1.),
+            51: (-1, -1.5, -1),
+            24: (-1.5, -1., -1.),
+            21: (-1.5, 0, -1.),
+            18: (-1.5, 1., -1.),
+            # top of cube
+            0: (-1,  1., 1.5),
+            1: (0,   1., 1.5),
+            2: (1.,  1., 1.5),
+            3: (-1.,    0,  1.5),
+            4: (0,      0., 1.5),
+            5: (1.,     0., 1.5),
+            6: (-1., -1.,   1.5),
+            7: (0,   -1., 1.5),
+            8: (1., -1., 1.5),
+            # bottom of cube
+            11: (-1, 1., -1.5),
+            10: (0, 1., -1.5),
+            9: (1., 1., -1.5),
+            14: (-1., 0, -1.5),
+            13: (0, 0., -1.5),
+            12: (1., 0., -1.5),
+            17: (-1., -1., -1.5),
+            16: (0, -1., -1.5),
+            15: (1., -1., -1.5),
+        }
+
+        self.f_g_map = self.make_g_coordinates()
+
+    def make_g_coordinates(self):
+        f_g_map_dict = OrderedDict()
+        g = -256
+        for idx, c_vec in self.f_map_raw.iteritems():
+            # normalize vector and multiply by -256 approx 1g
+            f_g_map_dict[idx] = g * np.asarray(c_vec) * 1./np.linalg.norm(np.asarray(c_vec))
+        # finally make numpy 2d-array where the index coincides with the square id
+        f_g_map = np.array([c_vec for i, c_vec in f_g_map_dict.iteritems()])
+        return f_g_map
+
 # a = get_array_filenames('20160921', device='futurocube', game='roadrunner', sequence=1, file_ext='csv')
-
-
+# fc = FuturoCube()
+# idxs = [3, 1, 3, 10, 50, 43]
+# print(fc.f_g_map[idxs])
+# # for idx in fc.f_map_raw.iterkeys():
+# #    print(idx, fc.f_map_raw[idx], fc.f_g_map[idx], np.linalg.norm(np.asarray(fc.f_g_map[idx])))
+#
+# with open('/home/jogi/tmp/cos_sim.csv') as f:
+#
+#     for line in f:
+#         line = line.replace("\n", "")
+#         columns = line.split(",")
+#         acc_vec = np.asarray(columns[:3], dtype=float)
+#         c_idx = int(columns[4])
+#         w_idx = int(columns[5])
+        # print ("%d %d %.3f" % (c_idx, w_idx, calc_cos_sim(acc_vec, fc.f_g_map[w_idx])))
+# print("27-49 %.3f" % (calc_cos_sim(fc.f_g_map[27], fc.f_g_map[49])))
+# print("28-49 %.3f" % (calc_cos_sim(fc.f_g_map[28], fc.f_g_map[49])))
+# print("29-49 %.3f" % (calc_cos_sim(fc.f_g_map[29], fc.f_g_map[49])))
+# print("30-49 %.3f" % (calc_cos_sim(fc.f_g_map[30], fc.f_g_map[49])))
+# print("31-49 %.3f" % (calc_cos_sim(fc.f_g_map[31], fc.f_g_map[49])))
+# print("32-49 %.3f" % (calc_cos_sim(fc.f_g_map[32], fc.f_g_map[49])))
+# print("33-49 %.3f" % (calc_cos_sim(fc.f_g_map[33], fc.f_g_map[49])))
+# print("34-49 %.3f" % (calc_cos_sim(fc.f_g_map[34], fc.f_g_map[49])))
+# print("35-49 %.3f" % (calc_cos_sim(fc.f_g_map[35], fc.f_g_map[49])))

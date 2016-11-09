@@ -10,7 +10,7 @@ from scipy.ndimage import convolve1d
 # from datetime import datetime
 
 from utils.smart_utils import apply_butter_filter, store_data, get_dir_path, load_data, make_data_description, \
-                                get_file_label_info, split_on_classes
+                                get_file_label_info, FuturoCube, calc_cos_sim, split_on_classes
 from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVERLAP_COEFFICIENT, \
     FEATURE_LIST, GAME1, CUT_OFF_LENGTH, MEAN_FILE_LENGTH, RAW_DATA_ARRAY, LABELS, IMPORT_COLUMNS
 
@@ -56,6 +56,8 @@ from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVER
 """
 
 # ================================= Procedures ======================================
+
+Cube = FuturoCube()
 
 
 def get_exprt_label(e_date, device='futurocube', game='roadrunner', s_label=''):
@@ -151,7 +153,7 @@ def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLA
     return np.array(window_lists1), np.array(window_lists2)
 
 
-def calculate_features(d_tensor, d_game_state, freq_bins, window_func=False, d_axis=1,
+def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins, window_func=False, d_axis=1,
                             low_offset=0, high_offset=0):
     """
 
@@ -307,6 +309,27 @@ def calculate_features(d_tensor, d_game_state, freq_bins, window_func=False, d_a
         # u_values, u_counts = np.unique(error_measure, return_counts=True)
         # print("error_measure unique counts ", u_values, u_counts)
 
+    if 'cos_sim' in FEATURE_LIST:
+        # unfortunately need to loop through windows, compute cosine similarity for each window
+        # separately
+        cos_sims = np.zeros((dim1, dim2, 1))
+        for w in np.arange(dim1):
+            # reshape to make 1d vector
+            idxs = np.reshape(d_game_state[w], (dim2 * dim3))
+            # look up the coordinate vectors in Cube
+            sq_vecs = Cube.f_g_map[idxs]
+            # unfortunately we also need to iterate through window samples each
+            # because cos-sim function only excepts 1d vectors
+            for s in np.arange(dim2):
+                cos_sims[w, s, :] = calc_cos_sim(sq_vecs[s], d_signal_3axis[w, s])
+        # TODO:
+        #   look at the values of the cos-sim and judge whether it is necessary to come up with a different
+        #   scale e.g. exponential, because probably values range between 0 and 2 (if 180 degrees angel)
+        #   average values?
+        #   add result to res_tensor
+        error_measure = np.reshape(np.sum(cos_sims[:, :, 0]**2, axis=d_axis), (d_game_state.shape[0], 1, 1))
+        res_tensor = np.append(res_tensor, error_measure, axis=1)
+
     if DEBUG_LEVEL >= 1:
         print("INFO - calculating features -shape of result tensor ", res_tensor.shape)
         # print(res_tensor)
@@ -422,9 +445,11 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
             # currently assuming that the dataframe columns 1 = x-axis, 2 = y-axis, 3 = z-axis
             # remember, indexing of columns starts at 0
             df.columns = IMPORT_COLUMNS
-            df.loc[df.dxdy_error > 20, 'dxdy_error'] = np.abs((df.dxdy_error - 2**16))
+            if 'dxdy_error' in df.columns:
+                df.loc[df.dxdy_error > 20, 'dxdy_error'] = np.abs((df.dxdy_error - 2**16))
             expt_data = df.iloc[:, 1:4].as_matrix()
             # assuming that after the first four columns (package_id, x, y, z) we store the game state info
+            # IMPORTANT, CHANGE IF MORE GAME STATE FEATURES!!!
             game_state_dta = df.iloc[:, 4:].as_matrix()
             # dimensionality of expt_data = (total number of samples, num of channels(x,y,z))
 
@@ -442,14 +467,15 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
                 if DEBUG_LEVEL >= 1:
                     print("INFO - Dimension of tensor after filtering ", expt_data.shape)
 
-            # calculate signal magnitudes
-            if calc_mag:
-                expt_data = np.reshape(np.sqrt(expt_data[:, 0]**2 + expt_data[:, 1]**2 + expt_data[:, 2]**2),
-                                            (expt_data.shape[0], 1))
-
             # segmentation of signal based on sliding window approach
             np_signal, np_game_state = convert_to_window_size(expt_data, game_state_dta, win_size=window_size_samples,
                                                                 max_num_windows=max_windows)
+            # calculate signal magnitudes
+            if calc_mag:
+                # we need to keep 3-axis acc data for calculation of cosine similarity
+                np_signal_3axis = np_signal
+                np_signal = np.reshape(np.sqrt(np_signal[:, :, 0]**2 + np_signal[:, :, 1]**2 + np_signal[:, :, 2]**2),
+                                            (np_signal.shape[0], np_signal.shape[1], 1))
             if save_raw_files:
                 save_filename = f_name[:f_name.find(".")]
                 save_one_array(np_signal, out_file=save_filename, out_loc=abs_dir_path)
@@ -459,7 +485,8 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=T
             #   axis 2 = number of channels, e.g. 3 for accelerometer data (x,y,z axis)
             # we are calculating the features for the tuple(window/channel-axis)
             # and therefore aggregating over axis 1 (2nd parameter to calculate_features)
-            m_features = calculate_features(np_signal, np_game_state, window_func=hamming_w, d_axis=1,
+            m_features = calculate_features(np_signal, np_game_state, np_signal_3axis,
+                                            window_func=hamming_w, d_axis=1,
                                             low_offset=low_offset,
                                             high_offset=high_offset,
                                             freq_bins=freq_bins)
@@ -528,9 +555,9 @@ def get_data(e_date, device='futurocube', game='roadrunner', file_ext='csv', cal
                            extra_label=extra_label, optimal_w_size=optimal_w_size)
 
 
-# train_data, train_labels, mydict = get_data('20160921', force=False, apply_window_func=True,
-#                                          extra_label="20hz_1axis_low8hz",
-#                                          optimal_w_size=False, calc_mag=True,
-#                                          f_type='low', lowcut=8, b_order=5)
+train_data, train_labels, mydict = get_data('20161106', force=False, apply_window_func=True,
+                                          extra_label="20hz_1axis_low8hz",
+                                          optimal_w_size=False, calc_mag=True,
+                                          f_type='low', lowcut=8, b_order=5)
 
 # res = split_on_classes(train_data, train_labels)
