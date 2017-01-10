@@ -2,7 +2,7 @@ import os
 import matplotlib.pyplot as plt
 from utils.smart_utils import get_dir_path, tensor_to_pandas, load_hdf5_file
 from utils.smart_utils import butter_bandpass, butter_lowpass, butter_highpass
-from utils.smart_utils import apply_butter_filter, load_file_to_pandas
+from utils.smart_utils import apply_butter_filter, load_file_to_pandas, FuturoCube, calc_cos_sim
 from scipy.signal import freqz
 
 import numpy as np
@@ -73,7 +73,6 @@ def plot_spectra_1axis(signal, sampling_freq, p_title, apply_window_func=False, 
               (sig_spec_x[0], sig_spec_x[1], sig_spec_x[2], sig_spec_x[3]))
         sig_spec_x = sig_spec_x[1:]
         frq = frq[1:]
-
 
     plt.figure(figsize=(width, height))
     plt.title(p_title, y=1.08)
@@ -404,14 +403,47 @@ def plot_single_filter_example(fs, lowcut, highcut, f_type):
     plot_butter_effect_3axis(r_signal, f_signal, p_label, p_label)
 
 
+def plot_cos_sim(data, width=10, height=10, p_title=None, p_legend=True):
+
+    print("data.shape ", data.shape)
+    dim1 = data.shape[0]
+    Cube = FuturoCube()
+    cos_sims = np.zeros((dim1, 1))
+    idxs = data[:, 3]
+    # look up the coordinate vectors in Cube
+    sq_vecs = Cube.f_g_map[idxs.astype(int)]
+    for w in np.arange(dim1):
+        cos_sims[w, :] = calc_cos_sim(sq_vecs[w], data[w, 0:3])
+
+    plt.figure(figsize=(width, height))
+    plt.title(p_title, y=1.08)
+    x = np.arange(dim1)
+    plt.scatter(x, cos_sims, label='cos-sim')
+    print("cos_sims.shape ", cos_sims.shape)
+    cos_sim_avg = np.convolve(np.squeeze(cos_sims), np.ones((20,)) / 20., mode="valid")
+    plt.plot(cos_sim_avg, "r", label="average-cos-sim")
+    plt.xlabel('time (1sec=21)')
+    plt.ylabel('|cosine-sim|')
+    plt.ylim([0, 2.])
+    plt.grid(True)
+    plt.axis('tight')
+    if p_legend:
+        # ax1.legend([sig1, sig2], loc="best")
+        plt.legend(loc="best")
+
+    plt.show()
+
+
 # single_file_plot()
 # plot_butterworth_filter(20, lowcut=0.5, highcut=7, f_type='high')
 # plot_sinosoidal_example1()
 # plot_single_filter_example(fs=20, lowcut=2, highcut=0.5, f_type='lowhigh')
 
 # freq = 20   # 20 Hz
-# r_signal = (load_file_to_pandas("futurocube", "roadrunner", "20160921_futurocube_roadrunner_[ID6:0:Age8:0:1]_acc.csv")
-#       ).as_matrix()
+#  ID12:0:Age7:0:1:A,  ID22:1:Age7:1:1:A,  ID19:2:Age7:1:1:A,   ID37:2:Age7:1:1:A
+# r_signal = (load_file_to_pandas("futurocube", "roadrunner", "20161206_futurocube_roadrunner_[ID37:2:Age7:1:1:A]_acc.csv", dims=4)
+#            ).as_matrix()
+# plot_cos_sim(r_signal, p_title='ID37:2:Age7:1:1:A')
 # t_cufoff = 15*freq
 # signal_fraction = r_signal[t_cufoff:t_cufoff+360, :]
 # single_file_plots(signal_fraction, 20, lowcut=2, highcut=0.1, f_type='lowhigh', b_order=5, plot_type=2)

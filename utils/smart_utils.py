@@ -9,7 +9,8 @@ from scipy.signal import butter, lfilter
 from scipy.spatial.distance import cosine
 from data.config import config
 from preprocessing.settings import DEBUG_LEVEL, DATA_ARRAY, LABEL_ARRAY, RAW_DATA_ARRAY, CUT_OFF_LENGTH, \
-                                    MEAN_FILE_LENGTH, OVERLAP_COEFFICIENT, LEVEL_TIME_INTERVALS, LABELS
+                                    MEAN_FILE_LENGTH, OVERLAP_COEFFICIENT, LEVEL_TIME_INTERVALS, LABELS, \
+                                    LABEL_GAME_ARRAY
 
 
 def create_row_mask(row_set, length):
@@ -97,7 +98,7 @@ def apply_butter_filter(signal, fs, lowcut, highcut, f_type, order):
     return y , p_label
 
 
-def load_file_to_pandas(device, game, filename, abs_path=False):
+def load_file_to_pandas(device, game, filename, abs_path=False, dims=3):
 
     file_ext = filename[(filename.find(".") + 1):]
     if not abs_path:
@@ -117,7 +118,7 @@ def load_file_to_pandas(device, game, filename, abs_path=False):
         df = excel_file.parse(excel_file.sheet_names[0])
     # only pass column 1,2 and 3 (x, y and z axis)
 
-    return df.iloc[:, 1:4]
+    return df.iloc[:, 1:(1+dims)]
 
 
 def tensor_to_pandas(d_tensor):
@@ -146,23 +147,28 @@ def load_data(filename):
             print('INFO - List of arrays in this file: \n', hf.keys())
         data = hf.get(DATA_ARRAY)
         data = np.array(data)
+        # contains the levels for the different motor skill classes
         labels = hf.get(LABEL_ARRAY)
         labels = np.array(labels)
+        # contains the labels for the different game levels
+        labels_g = hf.get(LABEL_GAME_ARRAY)
+        labels_g = np.array(labels_g)
 
     with open(filename + ".json", 'r') as fp:
         if DEBUG_LEVEL >= 1:
             print('INFO - Loading data description from json.')
         dta_dict = json.load(fp)
 
-    return data, labels, dta_dict
+    return data, labels, labels_g, dta_dict
 
 
-def store_data(f_data, l_data, out_file, out_loc, descr='None'):
+def store_data(f_data, l_data, l_g_data, out_file, out_loc, descr='None'):
 
     output_file_hd5 = out_loc + out_file + ".h5"
     h5f = h5py.File(output_file_hd5, 'w')
     h5f.create_dataset(DATA_ARRAY, data=f_data)
     h5f.create_dataset(LABEL_ARRAY, data=l_data)
+    h5f.create_dataset(LABEL_GAME_ARRAY, data=l_g_data)
     h5f.close()
 
     # store the dictionary that contains the description of the data by means of json
@@ -309,6 +315,30 @@ class FuturoCube(object):
         # finally make numpy 2d-array where the index coincides with the square id
         f_g_map = np.array([c_vec for i, c_vec in f_g_map_dict.iteritems()])
         return f_g_map
+
+
+def get_other_label(labels, label_name="ID"):
+    """
+
+    :param labels: matrix with all "other" labels
+    :param label_name: ID, perm, level
+    :return: vector with labels
+    """
+    N = labels.shape[0]
+    y_labels = np.zeros(N, dtype=np.int32)
+    if label_name == "ID":
+        label_idx = 0
+    elif label_name == "perm":
+        y_labels = np.zeros(N, dtype=np.dtype((str, 1)))
+        label_idx = 1
+    elif label_name == "level":
+        label_idx = 2
+    else:
+        raise NotImplementedError("Label name %s unknown" % label_name)
+
+    y_labels[:] = labels[:, label_idx]
+    return y_labels
+
 
 # a = get_array_filenames('20160921', device='futurocube', game='roadrunner', sequence=1, file_ext='csv')
 # fc = FuturoCube()
