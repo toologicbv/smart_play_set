@@ -1,3 +1,4 @@
+import numpy as np
 """
     Defining some global constants
 
@@ -6,13 +7,14 @@
 IMPORT_COLUMNS = ['pid', 'ax', 'ay', 'az', 'error']
 CUT_OFF_LENGTH = 0              # cut-off lengths in seconds, raw signal will be shortened
 GAME1 = 'futurocube'
-LEVEL_TIME_INTERVALS = [30, 120, 180, 210, 240, 300]   # in seconds between game levels
+TIME_INTERVALS = [30, 60, 90, 120, 150, 180]   # in seconds between game levels
 DEBUG_LEVEL = 2
 SAMPLE_FREQUENCY_FUTUROCUBE = 20.5  # sampling frequency
+LEVEL_TIME_INTERVALS = list(np.array(TIME_INTERVALS) * SAMPLE_FREQUENCY_FUTUROCUBE)
 
 # if we want to calculate the features for one window across the whole file length
 # we need to approximate "exp_2 = np.floor(np.log2(WINDOW_SIZE * freq))"
-WINDOW_SIZE = 5                 # in seconds
+WINDOW_SIZE = 3                 # in seconds
 OVERLAP_COEFFICIENT = 0.5          # 50% overlap of windows, important parameter!
                                  # 1 means no sliding window approach, can be used for hard cuts
 MEAN_FILE_LENGTH = 3750             # in samples
