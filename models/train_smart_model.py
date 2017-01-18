@@ -161,8 +161,8 @@ def train():
     # 5-7: 3-axial acc data without gravity
     # 8: cosine similarity measure
     smart_play = create_train_test_set(e_date='20161206', data_label=FLAGS.data_label,
-                                       split_perc=0.25, binary=False, one_hot=True, inc_game_state=True,
-                                       inc_linear_acc=True, use_level_labels=True)
+                                       split_perc=0.33, binary=True, one_hot=True, inc_game_state=True,
+                                       inc_linear_acc=False, use_level_labels=False)
     config = Config(smart_play)
     print("---- Mean/stddev of data dimensions ----")
     print(smart_play.test.data.shape, smart_play.test.labels.shape,

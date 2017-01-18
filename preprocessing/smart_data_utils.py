@@ -89,6 +89,7 @@ def create_train_test_set(e_date, data_label, split_perc=0.1, force=False, apply
         new_data = np.zeros((data.shape[0], data.shape[1], data.shape[2] - 3))
         new_data[:, :, 0:4] = data[:, :, 0:4]
         new_data[:, :, 4:] = data[:, :, 7:]
+        data = new_data
 
     classes = np.unique(labels)
     N = data.shape[0]
@@ -235,7 +236,7 @@ class DataSet(object):
 
 # 20hz_1axis_low8hz_330_12_True   20hz_1axis_low8hz_4731_128_False
 # "20hz_1axis_low8hz_3245_123_False"   20hz_1axis_low8hz_6377_64_False
-# smart_play = create_train_test_set(e_date='20161206', data_label="20hz_1axis_low8hz_6377_64_False",
+# smart_play = create_train_test_set(e_date='20161206', data_label="20hz_1axis_low8hz_6267_128_False",
 #                                   split_perc=0.15, binary=False, one_hot=True, use_level_labels=True,
 #                                   optimal_w_size=True, inc_game_state=True, inc_linear_acc=False,
 #                                   f_type="low", lowcut=8., highcut=0.)

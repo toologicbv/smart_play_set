@@ -277,21 +277,6 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
     if 'minf' in FEATURE_LIST:
         minf = np.reshape(np.amin(d_tensor, axis=d_axis), (dim1, 1, dim3))
         res_tensor = minf
-    if 'maxf' in FEATURE_LIST:
-        maxf = np.reshape(np.amax(d_tensor, axis=d_axis), (dim1, 1, dim3))
-        res_tensor = np.append(res_tensor, maxf, axis=1)
-    if 'mean' in FEATURE_LIST:
-        mean = np.reshape(np.mean(d_tensor, axis=d_axis), (dim1, 1, dim3))
-        res_tensor = np.append(res_tensor, mean, axis=1)
-    if 'std' in FEATURE_LIST:
-        std = np.reshape(np.std(d_tensor, axis=d_axis), (dim1, 1, dim3))
-        res_tensor = np.append(res_tensor, std, axis=1)
-    if 'median' in FEATURE_LIST:
-        median = np.reshape(np.median(d_tensor, axis=d_axis), (dim1, 1, dim3))
-        res_tensor = np.append(res_tensor, median, axis=1)
-    if 'range' in FEATURE_LIST:
-        range = maxf - minf
-        res_tensor = np.append(res_tensor, range, axis=1)
 
     if 'rms' in FEATURE_LIST:
         rms = np.reshape(np.sqrt(1/float(dim2) * np.sum(d_tensor**2, axis=d_axis)), (dim1, 1, dim3))
@@ -447,6 +432,22 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
         else:
             res_game_tensor = np.append(res_game_tensor, error_measure, axis=1)
             # res_game_tensor = np.append(res_game_tensor, cos_sim_avg, axis=1)
+
+    if 'maxf' in FEATURE_LIST:
+        maxf = np.reshape(np.amax(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, maxf, axis=1)
+    if 'mean' in FEATURE_LIST:
+        mean = np.reshape(np.mean(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, mean, axis=1)
+    if 'std' in FEATURE_LIST:
+        std = np.reshape(np.std(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, std, axis=1)
+    if 'median' in FEATURE_LIST:
+        median = np.reshape(np.median(d_tensor, axis=d_axis), (dim1, 1, dim3))
+        res_tensor = np.append(res_tensor, median, axis=1)
+    if 'range' in FEATURE_LIST:
+        range = maxf - minf
+        res_tensor = np.append(res_tensor, range, axis=1)
 
     if DEBUG_LEVEL >= 1:
         print("INFO - calculating features -shape of result tensor ", res_tensor.shape)
