@@ -207,6 +207,24 @@ def normalize_features(d_tensor, norm_stddev=True, use_scikit=False):
     return d_tensor
 
 
+def get_windows_level_changes(signal, game_state_signal, win_length):
+    """
+    Assuming that signal and game_state_signal are already segmented into windows that have a fixed game level
+    i.e. this only works if window length = game level length (e.g. in exp2 this was 30 seconds)
+    :param signal:
+    :param game_state_signal:
+    :param freq:
+    :param w_length:
+    :return:
+    """
+    signal_init_seg = np.zeros((signal.shape[0], win_length, signal.shape[2]))
+    game_init_seq = np.zeros((game_state_signal.shape[0], win_length, game_state_signal.shape[2]))
+    signal_init_seg[:] = signal[:, 0:win_length, :]
+    game_init_seq[:] = game_state_signal[:, 0:win_length, :]
+
+    return signal_init_seg, game_init_seq
+
+
 def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLAP_COEFFICIENT,
                            max_num_windows=20):
     """
@@ -508,7 +526,6 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
 
     max_windows = int(max_windows)
     freq_bins = np.fft.fftfreq(window_size_samples, 1/freq)[:window_size_samples/2]
-    # print(freq_bins)
     max_file_length = window_size_samples + ((max_windows - 1) * OVERLAP_COEFFICIENT * window_size_samples)
     if DEBUG_LEVEL >= 1:
         print("-------------------------------------------------------------------------")
@@ -546,6 +563,10 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
     # two tensors that will held the signal features and the game state features
     feature_data = None
     game_feature_data = None
+    # following two matrices are used for signal segments that hold the game level transition data
+    # we can use those segments to calculate features specifically for those transitions
+    feature_data_trans = None
+    game_feature_data_trans = None
     # label_data stores the class labels for the different motor skill levels (e.g. 0, 1)
     label_data = []
     # label_game_level stores the class labels for the different game levels of difficulty
@@ -604,13 +625,36 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
             np_signal, np_game_state, window_final_idx = convert_to_window_size(signal_data, game_state_dta,
                                                                                 win_size=window_size_samples,
                                                                                 max_num_windows=max_windows)
+            if WINDOW_SIZE == 30:
+                # get the game level transition windows (w_length). We can use these segments to calculate
+                # features for these specific windows when children have to cope with level transitions
+                win_length = int(freq * 5)  # length of window
+                np_signal_trans, np_game_state_trans = get_windows_level_changes(np_signal, np_game_state,
+                                                                                 win_length)
+                if apply_window_func:
+                    hamming_w_trans = np.hamming(win_length)
+                else:
+                    hamming_w_trans = None
+            else:
+                np_signal_trans = None
+                np_game_state_trans = None
+
             # we need to keep 3-axis acc data for calculation of cosine similarity
             np_signal_3axis = np.zeros_like(np_signal)
             np_signal_3axis[:] = np_signal[:]
+            if np_signal_trans is not None:
+                np_signal_trans_3axis = np.zeros_like(np_signal_trans)
+                np_signal_trans_3axis[:] = np_signal_trans[:]
+
             # calculate signal magnitudes
             if calc_mag:
                 np_signal = np.reshape(np.sqrt(np_signal[:, :, 0]**2 + np_signal[:, :, 1]**2 + np_signal[:, :, 2]**2),
                                             (np_signal.shape[0], np_signal.shape[1], 1))
+                if np_signal_trans is not None:
+                    np_signal_trans = np.reshape(np.sqrt(np_signal_trans[:, :, 0] ** 2 + np_signal_trans[:, :, 1] ** 2 +
+                                                         np_signal_trans[:, :, 2] ** 2),
+                                                        (np_signal_trans.shape[0], np_signal_trans.shape[1], 1))
+
             # save the raw data for each file (no features calculated). We can use this later to
             # for end-to-end learning e.g. conv or rnn networks
             if save_raw_files:
@@ -628,6 +672,15 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
                 m_features, m_game_features = calculate_features(np_signal, np_game_state, np_signal_3axis,
                                                                  window_func=hamming_w, d_axis=1,
                                                                  freq_bins=freq_bins)
+                if np_signal_trans is not None:
+                    m_features_trans, m_game_features_trans = calculate_features(np_signal_trans, np_game_state_trans,
+                                                                                 np_signal_trans_3axis,
+                                                                                 window_func=hamming_w_trans, d_axis=1,
+                                                                                 freq_bins=freq_bins)
+                else:
+                    m_features_trans = None
+                    m_game_features_trans = None
+
             else:
                 # pre-processing for Neural Network of RNN usage
                 # (1) we use the low-pass-filtered accelerometer data
@@ -644,14 +697,23 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
             # concatenate the contents of the files (transformed as numpy arrays)
             if feature_data is None:
                 feature_data = m_features
+                if feature_data_trans is None and m_features_trans is not None:
+                    feature_data_trans = m_features_trans
             else:
                 # Concatenate along axis 0...the windows
                 feature_data = np.concatenate((feature_data, m_features), axis=0)
+                if m_features_trans is not None:
+                    feature_data_trans = np.concatenate((feature_data_trans, m_features_trans), axis=0)
+
             if game_feature_data is None:
                 game_feature_data = m_game_features
+                if game_feature_data_trans is None and m_game_features_trans is not None:
+                    game_feature_data_trans = m_game_features_trans
             else:
                 # Concatenate along axis 0...the windows
                 game_feature_data = np.concatenate((game_feature_data, m_game_features), axis=0)
+                if m_game_features_trans is not None:
+                    game_feature_data_trans = np.concatenate((game_feature_data_trans, m_game_features_trans), axis=0)
 
             if DEBUG_LEVEL > 1:
                 print("INFO - total length file=%d, num of windows=%d, num of features=%d, channels=%d" %
