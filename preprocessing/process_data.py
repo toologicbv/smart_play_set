@@ -130,7 +130,7 @@ def save_one_array(d_array, out_file, out_loc):
     h5f.close()
 
 
-def extract_label_info(label_list1, other_labels, filename, num_windows, freq, windows_end_indices=None):
+def extract_label_info(label_list1, other_labels, filename, num_windows, windows_end_indices=None):
     # current assumption about labels, please explanations above
     # we are only using the "fitness" indication which should be positioned at 2nd label position
     # at the moment to train the classifier
@@ -150,10 +150,12 @@ def extract_label_info(label_list1, other_labels, filename, num_windows, freq, w
     # permutation
     other_labels['perm'].extend([labels[5] for i in range(num_windows)])
     if num_windows == len(game_level_dict[labels[5]]):
-        # number of windows fits exactly the number of different game levels (e.g. 12 windows and 6 game levels)
+        other_labels['level'].extend(game_level_dict[labels[5]][1:])
+        # number of windows fits exactly the number of different game levels (e.g. 6 windows and 6 game levels)
         n_times = num_windows / len(game_level_dict[labels[5]])
         for i in game_level_dict[labels[5]]:
             other_labels['level'].extend([i] * n_times)
+
     else:
         # can't derive game level with this segmentation, fill with zeros
         # we could do this once...but lazy here, so do it for each file
@@ -217,6 +219,7 @@ def get_windows_level_changes(signal, game_state_signal, win_length):
     :param w_length:
     :return:
     """
+
     signal_init_seg = np.zeros((signal.shape[0], win_length, signal.shape[2]))
     game_init_seq = np.zeros((game_state_signal.shape[0], win_length, game_state_signal.shape[2]))
     signal_init_seg[:] = signal[:, 0:win_length, :]
@@ -226,7 +229,7 @@ def get_windows_level_changes(signal, game_state_signal, win_length):
 
 
 def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLAP_COEFFICIENT,
-                           max_num_windows=20):
+                           max_num_windows=20, off_set=0):
     """
     Creates chunks of original raw data. Chunk size = window size
     :param expt_data:
@@ -243,9 +246,10 @@ def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLA
     total_samples = expt_data.shape[0]
     num_samples_so_far = 0
     while num_samples_so_far < total_samples:
-        window1 = expt_data[num_samples_so_far:num_samples_so_far + win_size]
-        window2 = game_state[num_samples_so_far:num_samples_so_far + win_size]
-        if window1.shape[0] < win_size:
+        window1 = expt_data[num_samples_so_far+off_set:num_samples_so_far + win_size]
+        window2 = game_state[num_samples_so_far+off_set:num_samples_so_far + win_size]
+        # print("num_samples_so_far %d / window1 %d" % (num_samples_so_far, len(window1)))
+        if window1.shape[0] < win_size - off_set:
             break
         window_lists1.append(window1)
         window_lists2.append(window2)
@@ -443,7 +447,7 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
         # (3) Reshape in order to stack features at the end
         # power_spec_entropy_sim = np.reshape(power_spec_entropy_sim, (dim1, 1, dim3))
 
-        error_measure = np.reshape(np.sum(cos_sims**5, axis=d_axis), (d_game_state.shape[0], 1, 1))
+        error_measure = np.reshape(np.sum(cos_sims**2, axis=d_axis), (d_game_state.shape[0], 1, 1))
         if res_game_tensor is None:
             res_game_tensor = error_measure
             # res_game_tensor = np.append(res_game_tensor, cos_sim_avg, axis=1)
@@ -476,7 +480,7 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
 
 def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=False, calc_mag=False,
                 f_type=None, lowcut=0., highcut=0., b_order=5,
-                apply_window_func=False, extra_label='', optimal_w_size=True, nn_switch=False):
+                apply_window_func=False, extra_label='', optimal_w_size=True, nn_switch=False, skip_level_chg=False):
     """
         Parameters:
             device: actually the intention was to use different game devices, but analysis is limited
@@ -551,6 +555,14 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
         print("---------------------------------------------------------------------------")
         print("")
 
+    # Not yet fully developed, if set to true, we skip the first (4 seconds in this case) seconds of
+    # each game level interval in order to skip the level changes
+    skip_level_chg = False
+    if skip_level_chg:
+        off_set = int(freq * 4)
+    else:
+        off_set = 0
+
     # only change directory if we are not already in ../data/... path
     if os.getcwd().find('data') == -1:
         os.chdir(root_path)
@@ -574,7 +586,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
     id_attributes = []
 
     if apply_window_func:
-        hamming_w = np.hamming(window_size_samples)
+        hamming_w = np.hamming(window_size_samples-off_set)
     else:
         hamming_w = None
 
@@ -624,7 +636,9 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
             # segmentation of signal based on sliding window approach
             np_signal, np_game_state, window_final_idx = convert_to_window_size(signal_data, game_state_dta,
                                                                                 win_size=window_size_samples,
-                                                                                max_num_windows=max_windows)
+                                                                                max_num_windows=max_windows,
+                                                                                off_set=off_set)
+
             if WINDOW_SIZE == 30:
                 # get the game level transition windows (w_length). We can use these segments to calculate
                 # features for these specific windows when children have to cope with level transitions
@@ -720,7 +734,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
                   (signal_data.shape[0], m_features.shape[0], m_features.shape[1], m_features.shape[2]))
             # get label information
             label_data, other_labels = extract_label_info(label_data, other_labels, f_name, m_features.shape[0],
-                                                          freq, window_final_idx)
+                                                          window_final_idx)
             # get dictionary with label info for this file
             label_dict = get_file_label_info(f_name)
             id_attributes.append(label_dict)
@@ -732,6 +746,11 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
     # finally normalize the calculated features
     # Note: each feature is normalized separately, but over all 3 axis
     if not nn_switch:
+        # if feature_data_trans is not None:
+        #    print("!!!!!!!!!!!!!!!!!!!! Using transition matrices !!!!!!!!!!!!!!!!!!!!")
+        #    feature_data = feature_data_trans
+        #    game_feature_data = game_feature_data_trans
+
         feature_data = normalize_features(feature_data, use_scikit=False)
         game_feature_data = normalize_features(game_feature_data, use_scikit=False)
         # reshape to 2 dim tensor
@@ -746,6 +765,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
 
     label_data = np.reshape(np.array(label_data), (len(label_data), 1))
     # concatenate all other label information into a matrix of N x num-of-labels
+    print(np.array(other_labels['level']).shape, np.array(other_labels['perm']).shape, np.array(other_labels['ID']).shape)
     label_other = np.concatenate((np.expand_dims(np.array(other_labels['ID']), 1),
                                   np.expand_dims(np.array(other_labels['perm']), 1),
                                   np.expand_dims(np.array(other_labels['level']), 1)), axis=1)
