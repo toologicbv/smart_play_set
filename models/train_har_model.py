@@ -4,7 +4,6 @@ from __future__ import print_function
 
 import argparse
 import os
-import time
 import sys
 
 ON_SERVER = False
@@ -34,7 +33,7 @@ DEFAULT_DATA_LABEL = "20hz_1axis_low8hz_6377_64_False"
 DEFAULT_MODEL = "slstm"
 
 if not ON_SERVER:
-    DATA_DIR_DEFAULT = './cifar10/cifar-10-batches-py'
+    DATA_DIR_DEFAULT = '/mnt/disk2/git/repository/smart_play_set/data'
     LOG_DIR_DEFAULT = '/mnt/disk2/git/repository/smart_play_set/models/logs'
     CHECKPOINT_DIR_DEFAULT = '/mnt/disk2/git/repository/smart_play_set/models/checkpoints'
 else:
@@ -59,7 +58,7 @@ WEIGHT_INITIALIZATION_DICT = {
                                                  maxval=WEIGHT_INITIALIZATION_SCALE_DEFAULT)
     }
 
-# Those are separate normalized input features for the neural network
+# different input channels for RNN, accelerometer, gyroscope, accelerometer without gravity butterworth filter
 INPUT_SIGNAL_TYPES = [
         "body_acc_x_",
         "body_acc_y_",
@@ -84,8 +83,6 @@ LABELS = [
 
 
 def extract_batch_size(_train, step, batch_size):
-    # Function to fetch a "batch_size" amount of data from "(X|y)_train" data.
-
     shape = list(_train.shape)
     shape[0] = batch_size
     batch_s = np.empty(shape)
@@ -185,11 +182,9 @@ def train():
     X_train = load_X(X_train_signals_paths)
     X_test = load_X(X_test_signals_paths)
 
-    # Load "y" (the neural network's training and testing outputs)
-
+    # Load data
     def load_y(y_path):
         file = open(y_path, 'rb')
-        # Read dataset from disk, dealing with text file's syntax
         y_ = np.array(
             [elem for elem in [
                 row.replace('  ', ' ').strip().split(' ') for row in file
@@ -198,7 +193,7 @@ def train():
         )
         file.close()
 
-        # Substract 1 to each output class for friendly 0-based indexing
+        # Subtract 1 in order to have class labels starting with 0
         return y_ - 1
 
     y_train_path = DATASET_PATH + TRAIN + "y_train.txt"
@@ -208,14 +203,12 @@ def train():
     y_test = load_y(y_test_path)
 
     # Input Data
-
-    training_data_count = len(X_train)  # 7352 training series (with 50% overlap between each serie)
-    test_data_count = len(X_test)  # 2947 testing series
+    training_data_count = len(X_train)
     n_steps = len(X_train[0])  # 128 timesteps per series
     num_of_channels = len(X_train[0][0])  # 9 input parameters per timestep
 
     # LSTM Neural Network's internal structure
-    n_classes = 6  # Total classes (should go up, or should go down)
+    n_classes = 6
 
     # Training
     lambda_loss_amount = 0.0015
@@ -223,7 +216,6 @@ def train():
     batch_size = 1500
     display_iter = 15000  # To show test set accuracy during training
 
-    # Some debugging info
     print("Some useful info to get an insight on dataset's shape and normalisation:")
     print("(X shape, y shape, every X's mean, every X's standard deviation)")
     print(X_test.shape, y_test.shape, np.mean(X_test), np.std(X_test))

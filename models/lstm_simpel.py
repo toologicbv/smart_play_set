@@ -123,7 +123,7 @@ class SimpleLSTM(object):
 
         # Split the series because the rnn cell needs time_steps features, each of shape:
         linear_out = tf.split(0, self.num_of_steps, linear_out)
-        # New feature_mat's shape: a list of lenght "time_step" containing tensors of shape [batch_size, n_hidden]
+        # linear_out is a tensor of shape [batch_size, n_hidden]
 
         # Define LSTM cell of first hidden layer:
         lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(self.n_hidden, forget_bias=1.0)
@@ -132,15 +132,15 @@ class SimpleLSTM(object):
         lstm_layers = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * 2)
         # lstm_layers = tf.nn.rnn_cell.MultiRNNCell([lstm_cell])
 
-        # Get LSTM outputs, the states are internal to the LSTM cells,they are not our attention here
+        # Get LSTM outputs
         outputs, _ = tf.nn.rnn(lstm_layers, linear_out, dtype=tf.float32, scope="LSTM")
-        # outputs' shape: a list of length "time_step" containing tensors of shape [batch_size, n_classes]
+        # outputs' shape [batch_size, n_classes]
         if self.batch_normalization:
             encoded_state = self._batch_norm_wrapper(outputs[-1])
         else:
             encoded_state = outputs[-1]
         # Linear activation
-        # Get the last output tensor of the inner loop output series, of shape [batch_size, n_classes]
+        # Get the last output tensor of shape [batch_size, n_classes]
         with tf.variable_scope("output") as scope:
             weights = tf.get_variable('weights', shape=[self.n_hidden, self.n_classes],
                                       initializer=self.weight_initializer,

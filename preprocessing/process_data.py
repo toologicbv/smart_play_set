@@ -4,15 +4,13 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-import h5py
 from sklearn.preprocessing import normalize
 from scipy.ndimage import convolve1d
-# from datetime import datetime
 
 from utils.smart_utils import apply_butter_filter, store_data, get_dir_path, load_data, make_data_description, \
-                                get_file_label_info, FuturoCube, calc_cos_sim, split_on_classes
+                                get_file_label_info, FuturoCube, calc_cos_sim
 from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVERLAP_COEFFICIENT, \
-    FEATURE_LIST, GAME1, CUT_OFF_LENGTH, MEAN_FILE_LENGTH, RAW_DATA_ARRAY, LABELS, IMPORT_COLUMNS, LEVEL_TIME_INTERVALS
+    FEATURE_LIST, GAME1, CUT_OFF_LENGTH, MEAN_FILE_LENGTH, IMPORT_COLUMNS, LEVEL_TIME_INTERVALS
 
 """
     The following assumptions are made:
@@ -21,11 +19,11 @@ from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVER
 
     Lay-out of Excel/csv files:
     ---------------------------
-        first column        = index number
+        first column        = sequence number
         second column       = x-axis (of accelerometer)
         third column        = y-axis
         fourth column       = z-axis
-        fifth column        = error measure (dx + dy)
+        fifth column        = cube index of walker
 
     Label information:
     ------------------
@@ -33,7 +31,7 @@ from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVER
         assuming, one file contains ONE game with a specific game device, done by one person
         Example:
         =========
-        filename = "20160907_roadrunner_futurocube_[ID5:0:age8]_acc.csv"
+        filename = "20161206_futurocube_roadrunner_[ID1:0:Age7:1:1:A]_acc.csv"
             # label info is contained in brackets [..:..] separated by dots
             # 1. ID of child/adult
             # 2. classification/fitness label (currently binary 0 = normal, 1 = likely to have delayed fine motor skills
@@ -69,8 +67,9 @@ from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVER
             - previous research revealed 50% to be a good factor
             - for calculation purposes we want all our experimental data to have the same number of windows
                therefore we use the constant MEAN_FILE_LENGTH to restrict the total length of the data (each file)
-            - we assume, that all files have nearly the same length (e.g. 2500 samples)
-            - calculating the
+            - we assume, that all files have nearly the same length (e.g. last experiments 3750 samples, 20.8 Hz)
+            - Note: in the final analysis, sliding window was not used (OVERLAP_COEFFICIENT = 1), used fix size
+              window of 30 seconds.
 """
 
 # ================================= Procedures ======================================
@@ -92,19 +91,19 @@ game_level_dict = {'A': [1, 2, 3, 1, 2, 3],
 
 def calc_cosine_similarity(cube_index_tensor, raw_acc_signal):
     """
+    Calculate the cosine similarity measure between walker and assumed upward position of the cube.
+    Please see final report for a more detailed description.
 
-    :param cube_index_tensor:
+    :param cube_index_tensor: 2D tensor that holds walker location (index number) for each sample (num of windows
+    x window size).
     :param raw_acc_signal:
-    :param dim1: number of windows (segmentation)
-    :param dim2: size of each window
-    :return:
+    :return: 3D tensor (num of windows, window size, 1) of cosine similarity measures
     """
-    dim1 = cube_index_tensor.shape[0]
-    dim2 = cube_index_tensor.shape[1]
+    dim1 = cube_index_tensor.shape[0]  # number of windows (segmentation)
+    dim2 = cube_index_tensor.shape[1]  # size of each window
     cos_sims = np.zeros((dim1, dim2, 1))
     for w in np.arange(dim1):
-        # reshape to make 1d vector
-        idxs = np.reshape(cube_index_tensor[w], (dim2 * 1))
+        idxs = cube_index_tensor[w]
         # look up the coordinate vectors in Cube
         sq_vecs = Cube.f_g_map[idxs.astype(int)]
         # unfortunately we also need to iterate through window samples each
@@ -116,24 +115,34 @@ def calc_cosine_similarity(cube_index_tensor, raw_acc_signal):
 
 
 def get_exprt_label(e_date, device='futurocube', game='roadrunner', s_label=''):
-
-    # centralize the construction of the experiment labelling
-    # used to store and load matrices
+    """
+    centralize the construction of the experiment labelling
+    used to store and load matrices
+        :param e_date: YYYYMMDD identifying the date of the experiments
+        :param device: constant for now
+        :param game: constant for now
+        :param s_label: extra suffix label to identify run
+    """
 
     return e_date + "_" + device + "_" + game + "_" + str(s_label)
 
 
-def save_one_array(d_array, out_file, out_loc):
-    output_file = out_loc + out_file + ".h5"
-    h5f = h5py.File(output_file, 'w')
-    h5f.create_dataset(RAW_DATA_ARRAY, data=d_array)
-    h5f.close()
-
-
 def extract_label_info(label_list1, other_labels, filename, num_windows, windows_end_indices=None):
-    # current assumption about labels, please explanations above
-    # we are only using the "fitness" indication which should be positioned at 2nd label position
-    # at the moment to train the classifier
+    """
+    Extract for each file the label information which is explained in the header of this file.
+
+    :param label_list1: a list that will be extended each time we call the procedure
+    :param other_labels: a dictionary of lists with 3 entries 'permutations', 'levels', 'ID of child'.
+    The lists will be extended each time we call the procedure
+    :param filename: the relative filename (without directory naming) we're currently processing.
+    :param num_windows: Number of windows
+    :param windows_end_indices: Actually this is not in use. I experimented around and used this to omit the
+    samples in the level changes, so only processing the samples that I assumed the children were adjusted to the
+    game level.
+    :return: the objects label_list1, other_labels that are extended each time we call the procedure
+    """
+    # current assumption about labels, please see explanations above
+
     if len(other_labels) == 0:
         other_labels = {'perm': [],
                         'level': [],
@@ -147,10 +156,10 @@ def extract_label_info(label_list1, other_labels, filename, num_windows, windows
     # permutations are stored in the dict "game_level_dict". The last label in the filename
     # 20161206_futurocube_roadrunner_[ID3:1:Age7:1:1:C]_acc.csv (in this case "C") indicates the permutation.
     # Therefore we can extend the label_list2 just with the array stored in game_level_dict for the specific
-    # permutation
+    # permutation.
     other_labels['perm'].extend([labels[5] for i in range(num_windows)])
-    if num_windows == len(game_level_dict[labels[5]]):
-        other_labels['level'].extend(game_level_dict[labels[5]][1:])
+
+    if num_windows == len(game_level_dict[labels[5]]):   # labels[5] equal to A..W, game level permutations
         # number of windows fits exactly the number of different game levels (e.g. 6 windows and 6 game levels)
         n_times = num_windows / len(game_level_dict[labels[5]])
         for i in game_level_dict[labels[5]]:
@@ -171,7 +180,7 @@ def extract_label_info(label_list1, other_labels, filename, num_windows, windows
                     break
                 else:
                     pass
-
+    # labels[0] contains IDx, we filter out only the actual ID of the child
     other_labels['ID'].extend([int(labels[0][2:]) for i in range(num_windows)])
 
     return label_list1, other_labels
@@ -213,10 +222,16 @@ def get_windows_level_changes(signal, game_state_signal, win_length):
     """
     Assuming that signal and game_state_signal are already segmented into windows that have a fixed game level
     i.e. this only works if window length = game level length (e.g. in exp2 this was 30 seconds)
+    Basically what I do here is trying to extract only the game level changes. This relates to the assumption
+    that these periods reveal important information about the motor skill abilities of a child (how fast do
+    they adjust to the new level, how many mistakes to they make in these periods).
+
+    NOTE: this is currently not in use. Relates to the story around object "windows_end_indices" in procedure
+          extract_label_info.
+
     :param signal:
     :param game_state_signal:
-    :param freq:
-    :param w_length:
+    :param win_length:
     :return:
     """
 
@@ -232,11 +247,16 @@ def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLA
                            max_num_windows=20, off_set=0):
     """
     Creates chunks of original raw data. Chunk size = window size
-    :param expt_data:
-    :param win_size:
-    :param overlap_coeff
-    :param max_num_windows:
-    :return:
+    :param expt_data: 3D tensor containing the original signal data
+    :param game_state: 2D tensor containing the game state information
+    :param win_size: number of samples per window
+    :param overlap_coeff: how much do windows overlap, we used 0.5 and 1 (= no overlapping)
+    :param max_num_windows: everything after this number of windows will be omitted
+    :return: (1) 3D tensor (num of windows, window size, num of channels) for acc signal data
+             (2) 3D tensor (num of windows, window size, 1) for game state measure
+             (3) list of indices that indicate end of window index. Currently not used in program.
+                 Idea was to use this to determine the game level when using a sliding window approach.
+                 Therefore the list in used in the procedure that extracts the label information.
     """
     window_lists1 = []
     window_lists2 = []
@@ -275,14 +295,18 @@ def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLA
 def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
                        window_func, d_axis=1):
     """
+    Important part where we calculate the different features used for the analysis.
 
-    :param d_tensor:
-    :param d_game_state:
-    :param d_signal_3axis:
+    :param d_tensor: 3D tensor that contains acc signal data (num of windows, window size, num of channels)
+    Note, if the magnitude of the signal was calculated before, num of channels is equal to 1, otherwise 3.
+    :param d_game_state: 3D tensor that contains game state data (num of windows, window size, 1)
+    :param d_signal_3axis: in case the magnitude was calculated for the acc signal we still need the original 3 axis
+    signal in order to determine the cosine similarity measure.
     :param freq_bins:
-    :param window_func:
-    :param d_axis: along which the features need to be calculated
-    :return:
+    :param window_func: We only use Hamming window function that is applied to acc signal
+    :param d_axis: along which the features need to be calculated (default is 1 == over window length)
+    :return: (1) 3D tensor (num of windows, number of features, 1) that contains all non-game features
+             (2) 3D tensor (num of windows, number of game features, 1) contains game features
     """
 
     if d_tensor.ndim == 3:
@@ -294,6 +318,12 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
 
     res_tensor = None
     res_game_tensor = None
+
+    """
+        Note: little subtlety, make sure that FEATURE_LIST (set in settings.py) always contains the "minf" feature
+        otherwise you need to adjust the first time when res_tensor object is set (because after the 1st time we
+        concatenate) and I was lazy checking this each time.
+    """
 
     # Envelope metrics in time domain
     if 'minf' in FEATURE_LIST:
@@ -333,6 +363,7 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
 
         if 'mean_squared_jerk' in FEATURE_LIST:
             res_tensor = np.append(res_tensor, mean_sq_jerk, axis=1)
+        # currently not using this
         if 'int_squared_jerk' in FEATURE_LIST:
             res_tensor = np.append(res_tensor, int_mean_jerk, axis=1)
 
@@ -345,22 +376,6 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
         d_tensor = d_tensor * np.reshape(window_func, (1, len(window_func), 1))
 
     fd = np.fft.fft(d_tensor, axis=1)  # frequency domain
-
-    # NOTE ==>> CURRENTLY INACTIVE
-    # now skip fft coefficients that are outside of the low/high pass filter
-    # if low_offset != 0 or high_offset != 0:
-    #     if low_offset != 0:
-    #         fd = fd[:, 0:low_offset, :]
-    #         dim2 = fd.shape[1]
-    #
-    #     if high_offset != 0:
-    #         fd = fd[:, high_offset:, :]
-    #         dim2 = fd.shape[1]
-
-    # else:
-    #    # no butterworth filtering
-    #    pass
-
     # DC or zero Hz component, is the first component of the N (window sample size) components
     # -----------------------
     # for each window (first axis) take the first component, reshape so we can stack later
@@ -375,15 +390,16 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
     #
     power_spec_not_avg = np.abs(fd[:, 1:]) ** 2
 
-    # Energy (following Bao and Intille, is this correct?)
+    # Energy (following Bao and Intille)
     # ----------------------------------------------------
-    # Questions:
-    #   according to Boa et al. we need to omit the DC component, so do we need to normalize by N-1 right?
     if 'energy' in FEATURE_LIST:
         energy = 1/(float(dim2) - 1) * np.reshape(np.sum(np.abs(fd[:, 1:]) ** 2, axis=d_axis), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, energy, axis=1)
 
     # Power Spectral Entropy (PSE)
+    # Please note that we follow the description given in
+    # "Feature Extraction of EEG Signals Using Power Spectral Entropy" from Zhang, Yang, Huang (2008)
+    # See final report for more details
     # ----------------------------------
     # (1) first step, normalize the PSD. Note, we are summing over the window axis, therefore we end up with a
     #       sum-component for each window and channel/axis which is used as normalizing coefficient
@@ -409,7 +425,8 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
         dominant_freq = np.reshape(dominant_freq, (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, dominant_freq, axis=1)
     ###############################################################################################
-    #                            GAME STATE FEATURES                                              #
+    #                            GAME STATE FEATURES
+    # dx_dy_error was only used in first experiments                                           #
     if 'dxdy_error' in FEATURE_LIST:
 
         error_measure = np.reshape(np.sum(d_game_state[:, :, 0]**2, axis=d_axis), (d_game_state.shape[0], 1, 1))
@@ -421,32 +438,13 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
         # unfortunately need to loop through windows, compute cosine similarity for each window
         # separately
         cos_sims = calc_cosine_similarity(d_game_state, d_signal_3axis)
-        # TODO:
-        #   look at the values of the cos-sim and judge whether it is necessary to come up with a different
-        #   scale e.g. exponential, because probably values range between 0 and 2 (if 180 degrees angel)
-        #   average values?
+
         #   January 2017:
         #   ==============
         #   Decided to use sum of squared cosine-sim values. Why? I attenuate errors between 0-1 which
         #   happen easily and values up to 0.5 are just due to noise in the data because walker index almost always
         #   deviates at least one square on the cube to the gravity signal of the accelerometer (just look at the
         #   raw output data, you'll notice that this is almost always the case)
-        #
-        #
-        # cos_sim_avg = np.zeros((dim1, dim2))
-        # for w in np.arange(dim1):
-        #    cos_sim_avg[w] = np.convolve(np.squeeze(cos_sims[w]), np.ones((10,)) / 10., mode="same")
-
-        # cos_sim_avg = np.reshape(np.sum(cos_sim_avg**5, axis=d_axis), (d_game_state.shape[0], 1, 1))
-        # print("shape of cos_sim_avg ", cos_sim_avg.shape)
-        # fft_sim = np.fft.fft(cos_sim_avg, axis=1)  # frequency domain
-        # dc_sim = np.reshape(np.real(fft_sim[:, 0]), (dim1, 1, dim3))
-        # power_spec_sim = np.abs(fft_sim) ** 2
-        # norm_power_spec_sim = power_spec_sim / np.reshape(np.sum(power_spec_sim, axis=d_axis), (dim1, 1, dim3))
-        # power_spec_entropy_sim = - np.sum(norm_power_spec_sim * np.log(norm_power_spec_sim), axis=d_axis)
-        # (3) Reshape in order to stack features at the end
-        # power_spec_entropy_sim = np.reshape(power_spec_entropy_sim, (dim1, 1, dim3))
-
         error_measure = np.reshape(np.sum(cos_sims**2, axis=d_axis), (d_game_state.shape[0], 1, 1))
         if res_game_tensor is None:
             res_game_tensor = error_measure
@@ -478,28 +476,58 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
     return res_tensor, res_game_tensor
 
 
-def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=False, calc_mag=False,
+def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
                 f_type=None, lowcut=0., highcut=0., b_order=5,
-                apply_window_func=False, extra_label='', optimal_w_size=True, nn_switch=False, skip_level_chg=False):
+                apply_window_func=False, extra_label='', optimal_w_size=True, nn_switch=False,
+                skip_level_chg=False):
     """
+        Probably it would have been wiser (by hindsight) to split this procedure in smaller chunks
+
         Parameters:
             device: actually the intention was to use different game devices, but analysis is limited
                     to "futurocube"
-            game: same as device, in the end limited to "roadrunner" game
-            root_path
-            file_ext
-            save_raw_files
+            game: in the end limited to "roadrunner" game
+            root_path: root directory in which to search for csv files
+            file_ext: actually only used 'csv' for the analysis, so could be omitted.
             calc_mag: calculate the magnitude of the signal BEFORE computing the features!
             f_type: low, high, band or None
-            lowcut:
-            highcut:
+            lowcut: for butterworth filter low cut frequency
+            highcut: for butterworth filter high cut frequency
             b_order: order of butterworth filter
-            apply_window_func
+            apply_window_func: boolean indicating whether or not to use Hamming window
             extra_label: a string that will be concatenated to form the filename of the
                          output file
             optimal_w_size: boolean, if true window size must be of size 2^n, where n fits the data
             nn_switch: boolean, when true the data is pre-processed for the neural network / RNN version
                        which basically means that features are not calculated and the data is as "raw" as possible
+            skip_level_chg: currently not in use. Was used to omit the game level transitions from the analysis
+                            and process them separately.
+
+            Returns: (1) feature_data:
+                     (2) label_data: 2D tensor with motor skill labels (exp2 0=normal, 1=likely deficiency, 2 = most
+                     likely motor skill deficiency
+                     (3) label_other: dictionary of 2D tensors with labels a) permutations ('perm')
+                                                                           b) game levels ('level')
+                                                                           c) ID of children ('ID')
+                     (4) d_dict: dictionary which basically contains all the settings  (e.g. features calculated etc)
+
+            The procedure also creates two output files in the same directory where the original experimental data
+            can be found (root_path). Example:
+            (1) File that contains:
+                a) 3D tensor with segments and calculated features (number of segments, features, 1)
+                b) 2D tensor with segments and motor skill labels
+                c) Dictionary of three 2D tensors with other labels, see above
+
+                e.g. 20161206_futurocube_roadrunner_20hz_1axis_low8hz_330_12_True.h5
+                where "20hz_1axis_low8hz" = extra_label
+                      330 = number of segments
+                      12  = number of features
+                      True = calculate magnitude
+
+            (2) json file that contains a dictionary that describes the data. Looking back, this could easily
+                been integrated with other objects in one file.
+
+            The procedure smart_utils.load_data implements the load of the data from these 2 files.
     """
 
     if nn_switch and calc_mag:
@@ -611,35 +639,43 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
             # convert the pandas dataframe to a numpy array
             # currently assuming that the dataframe columns 1 = x-axis, 2 = y-axis, 3 = z-axis
             df.columns = IMPORT_COLUMNS
+            # Experiments 1 when we used the unreliable dx/dy error measure. We surmised that we could rescue the
+            # score by "wrapping" it back into the 16 bit range...anyway not used anymore
             if 'dxdy_error' in df.columns:
                 df.loc[df.dxdy_error > 20, 'dxdy_error'] = np.abs((df.dxdy_error - 2**16))
-            # print("df.dtypes: ", df.dtypes)
             raw_data = df.iloc[:, 1:4].as_matrix()
             # assuming that after the first four columns (package_id, x, y, z) we store the game state info
             # IMPORTANT, CHANGE IF MORE GAME STATE FEATURES!!!
             game_state_dta = df.iloc[:, 4:].as_matrix()
             # dimensionality of raw_data = (total number of samples, num of channels(x,y,z))
-
             # we assume that the beginning and the end of the raw signal contains too much
             # noise, therefore we are cutting of a piece in the beginning and in the end
+            # Note: we did not use offset in the end
             raw_data = raw_data[signal_offset:raw_data.shape[0] - signal_offset, :]
             # apply a butterworth filter if specified
-
             if f_type is not None:
-                # apply butterworth filter or filters
+                # apply butterworth filter
                 signal_data, _ = apply_butter_filter(raw_data, freq, lowcut, highcut, f_type, b_order)
                 if DEBUG_LEVEL >= 1:
                     print("INFO - Dimension of tensor after filtering ", signal_data.shape)
             else:
                 signal_data = raw_data
 
-            # segmentation of signal based on sliding window approach
+            # segmentation of signal based on sliding window approach or fixed window size
             np_signal, np_game_state, window_final_idx = convert_to_window_size(signal_data, game_state_dta,
                                                                                 win_size=window_size_samples,
                                                                                 max_num_windows=max_windows,
                                                                                 off_set=off_set)
-
             if WINDOW_SIZE == 30:
+                """
+                    Note: This piece of coding refers to earlier remarks w.r.t. the game level transitions.
+                    We experimented with the extraction of features only from these periods.
+                    In the current version of this program the final matrices:
+                        m_features_trans
+                        m_game_features_trans
+                    are not saved to file and therefore not used.
+
+                """
                 # get the game level transition windows (w_length). We can use these segments to calculate
                 # features for these specific windows when children have to cope with level transitions
                 win_length = int(freq * 5)  # length of window
@@ -669,11 +705,6 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
                                                          np_signal_trans[:, :, 2] ** 2),
                                                         (np_signal_trans.shape[0], np_signal_trans.shape[1], 1))
 
-            # save the raw data for each file (no features calculated). We can use this later to
-            # for end-to-end learning e.g. conv or rnn networks
-            if save_raw_files:
-                save_filename = f_name[:f_name.find(".")]
-                save_one_array(np_signal, out_file=save_filename, out_loc=abs_dir_path)
             # previous function returns a numpy array with 3 axis:
             #   axis 0 = number of windows
             #   axis 1 = number of samples per window
@@ -696,7 +727,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
                     m_game_features_trans = None
 
             else:
-                # pre-processing for Neural Network of RNN usage
+                # pre-processing for Neural Network of RNN usage only
                 # (1) we use the low-pass-filtered accelerometer data
                 gravity, _ = apply_butter_filter(np_signal, freq, lowcut=0.3, highcut=0, f_type='low', order=3)
                 linear_acc = np_signal - gravity
@@ -706,7 +737,6 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
                 # (2) we convert the walker index (assuming this is the only game state feature for this experiment
                 #     to a "cube" vector and calculate the cosine similarity based on accelerometer vector
                 m_game_features = calc_cosine_similarity(np_game_state, np_signal)
-                print("m_features.shape & m_game_features.shape ", m_features.shape, m_game_features.shape)
 
             # concatenate the contents of the files (transformed as numpy arrays)
             if feature_data is None:
@@ -746,6 +776,8 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
     # finally normalize the calculated features
     # Note: each feature is normalized separately, but over all 3 axis
     if not nn_switch:
+        # NOTE: this code is disabled. Was used to experiment with features only from game level transition periods
+
         # if feature_data_trans is not None:
         #    print("!!!!!!!!!!!!!!!!!!!! Using transition matrices !!!!!!!!!!!!!!!!!!!!")
         #    feature_data = feature_data_trans
@@ -775,24 +807,43 @@ def import_data(edate, device, game, root_path, file_ext='csv', save_raw_files=F
         print("INFO - Feature data shape ", feature_data.shape, " / label data shape ", label_data.shape,
               " label game levels shape ", label_other.shape, " shape game state features ", game_feature_data.shape)
     # finally store matrices in hdf5 format
-    # data_label = get_exprt_label("{:%d%m%Y}".format(datetime.now()), device, game, extra_label, 1)
     # extend extra label with dimensions of feature data, that helps identifying the contents of the different
     # files
     extra_label = extra_label + "_" + str(feature_data.shape[0]) + "_" + str(feature_data.shape[1]) + "_" + \
-                    str(calc_mag)
+                  str(calc_mag)
     data_label = get_exprt_label(edate, device, game, extra_label)
     d_dict = make_data_description(freq, window_size_samples, max_windows, apply_window_func, f_type,
                                    [lowcut, highcut, b_order], num_of_files, feature_list, id_attributes)
     store_data(feature_data, label_data, label_other, data_label, out_loc=abs_dir_path, descr=d_dict)
-    # print("feature_data ", feature_data[:, 33])
-    # print("label_data ", np.squeeze(label_data))
-    # print("label_other ", label_other[:, 2])
+
     return feature_data, label_data, label_other, d_dict
 
 
 def get_data(e_date, device='futurocube', game='roadrunner', file_ext='csv', calc_mag=False,
              apply_window_func=True, extra_label='', force=False,
              f_type=None, lowcut=8, highcut=0., b_order=5, optimal_w_size=True, nn_switch=False):
+    """
+    Most of the parameters were already described in the method "import_data".
+    This is a wrapper function. When the data was already pre-processed we're just trying to open the specific
+    h5 file e.g. "20161206_futurocube_roadrunner_20hz_1axis_low8hz_330_12_True.h5".
+    Otherwise we call import_data to process the experimental data and store the final tensors.
+
+    :param e_date: used to construct the prefix of the files that need to be processed, see filename example above
+    :param device: see import_data
+    :param game: see import_data
+    :param file_ext: see import_data
+    :param calc_mag: see import_data
+    :param apply_window_func: see import_data
+    :param extra_label: see import_data
+    :param force: boolean, if set to True, the experimental data will be pre-processed and features will be calculated
+    :param f_type: see import_data
+    :param lowcut: see import_data
+    :param highcut: see import_data
+    :param b_order: see import_data
+    :param optimal_w_size: see import_data
+    :param nn_switch: see import_data
+    :return: the same objects as procedure import_data
+    """
 
     data_label = get_exprt_label(e_date, device, game, extra_label)
     root_dir = get_dir_path(device, game)
@@ -814,11 +865,11 @@ def get_data(e_date, device='futurocube', game='roadrunner', file_ext='csv', cal
                            f_type=f_type, lowcut=lowcut, highcut=highcut, b_order=b_order,
                            extra_label=extra_label, optimal_w_size=optimal_w_size, nn_switch=nn_switch)
 
-do = False
+do = True
 if do:
     # 20hz_1axis_low8hz_330_12_True
     train_data, train_labels, train_labels_game, mydict = get_data('20161206', force=False, apply_window_func=True,
-                                                                    extra_label="20hz_1axis_low8hz",
+                                                                    extra_label="void_20hz_1axis_low8hz",
                                                                     optimal_w_size=False, calc_mag=True,
                                                                     f_type='low', lowcut=8, b_order=5, nn_switch=False)
     print("----- Shapes of matrices ----")

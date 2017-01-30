@@ -35,7 +35,7 @@ DEFAULT_DATA_LABEL = "20hz_1axis_high03hz_6377_64_False"
 DEFAULT_MODEL = "smart_lstm"
 
 if not ON_SERVER:
-    DATA_DIR_DEFAULT = './cifar10/cifar-10-batches-py'
+    DATA_DIR_DEFAULT = '/mnt/disk2/git/repository/smart_play_set/data'
     LOG_DIR_DEFAULT = '/mnt/disk2/git/repository/smart_play_set/models/logs'
     CHECKPOINT_DIR_DEFAULT = '/mnt/disk2/git/repository/smart_play_set/models/checkpoints'
 else:
@@ -60,18 +60,7 @@ WEIGHT_INITIALIZATION_DICT = {
                                                  maxval=WEIGHT_INITIALIZATION_SCALE_DEFAULT)
     }
 
-# Those are separate normalized input features for the neural network
-INPUT_SIGNAL_TYPES = [
-        "raw_cube_acc_x_",
-        "raw_cube_acc_y_",
-        "raw_cube_acc_z_",
-        "linear_cube_acc_x_",
-        "linear_cube_acc_y_",
-        "linear_cube_acc_z_",
-        "game_cos_sim"
-    ]
-
-# Classes to discriminate
+# Classes labels
 LABELS = [
         "Normal",
         "Deficiency 1",
