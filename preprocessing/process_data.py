@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import os
 import glob
+import argparse
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import normalize
@@ -9,8 +10,7 @@ from scipy.ndimage import convolve1d
 
 from utils.smart_utils import apply_butter_filter, store_data, get_dir_path, load_data, make_data_description, \
                                 get_file_label_info, FuturoCube, calc_cos_sim
-from settings import SAMPLE_FREQUENCY_FUTUROCUBE, DEBUG_LEVEL, WINDOW_SIZE, OVERLAP_COEFFICIENT, \
-    FEATURE_LIST, GAME1, CUT_OFF_LENGTH, MEAN_FILE_LENGTH, IMPORT_COLUMNS, LEVEL_TIME_INTERVALS
+from settings import config
 
 """
     The following assumptions are made:
@@ -168,10 +168,10 @@ def extract_label_info(label_list1, other_labels, filename, num_windows, windows
     else:
         # can't derive game level with this segmentation, fill with zeros
         # we could do this once...but lazy here, so do it for each file
-        max_intervals = len(LEVEL_TIME_INTERVALS)
+        max_intervals = len(config.LEVEL_TIME_INTERVALS)
         game_levels = game_level_dict[labels[5]]
         for end_idx in windows_end_indices:
-            for i, level_end_idx in enumerate(LEVEL_TIME_INTERVALS):
+            for i, level_end_idx in enumerate(config.LEVEL_TIME_INTERVALS):
                 if end_idx <= level_end_idx:
                     other_labels['level'].extend([game_levels[i]])
                     break
@@ -243,7 +243,7 @@ def get_windows_level_changes(signal, game_state_signal, win_length):
     return signal_init_seg, game_init_seq
 
 
-def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=OVERLAP_COEFFICIENT,
+def convert_to_window_size(expt_data, game_state, win_size, overlap_coeff=config.OVERLAP_COEFFICIENT,
                            max_num_windows=20, off_set=0):
     """
     Creates chunks of original raw data. Chunk size = window size
@@ -326,15 +326,15 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
     """
 
     # Envelope metrics in time domain
-    if 'minf' in FEATURE_LIST:
+    if 'minf' in config.FEATURE_LIST:
         minf = np.reshape(np.amin(d_tensor, axis=d_axis), (dim1, 1, dim3))
         res_tensor = minf
 
-    if 'rms' in FEATURE_LIST:
+    if 'rms' in config.FEATURE_LIST:
         rms = np.reshape(np.sqrt(1/float(dim2) * np.sum(d_tensor**2, axis=d_axis)), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, rms, axis=1)
 
-    if 'mean_squared_jerk' in FEATURE_LIST or 'int_squared_jerk' in FEATURE_LIST:
+    if 'mean_squared_jerk' in config.FEATURE_LIST or 'int_squared_jerk' in config.FEATURE_LIST:
         d_filter = np.array([1.0, -1.0], np.float32)
         if dim3 > 1:
             # convolve function can only take 2D tensor, so we need to convolve each dimension separately
@@ -361,10 +361,10 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
             int_mean_jerk = np.reshape(signal_jerk, (dim1, 1, 1))
             mean_sq_jerk = 1 / float(dim2) * int_mean_jerk
 
-        if 'mean_squared_jerk' in FEATURE_LIST:
+        if 'mean_squared_jerk' in config.FEATURE_LIST:
             res_tensor = np.append(res_tensor, mean_sq_jerk, axis=1)
         # currently not using this
-        if 'int_squared_jerk' in FEATURE_LIST:
+        if 'int_squared_jerk' in config.FEATURE_LIST:
             res_tensor = np.append(res_tensor, int_mean_jerk, axis=1)
 
     ###############################################################################################
@@ -379,7 +379,7 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
     # DC or zero Hz component, is the first component of the N (window sample size) components
     # -----------------------
     # for each window (first axis) take the first component, reshape so we can stack later
-    if 'dc' in FEATURE_LIST:
+    if 'dc' in config.FEATURE_LIST:
         dc = np.reshape(np.real(fd[:, 0]), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, dc, axis=1)
 
@@ -392,7 +392,7 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
 
     # Energy (following Bao and Intille)
     # ----------------------------------------------------
-    if 'energy' in FEATURE_LIST:
+    if 'energy' in config.FEATURE_LIST:
         energy = 1/(float(dim2) - 1) * np.reshape(np.sum(np.abs(fd[:, 1:]) ** 2, axis=d_axis), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, energy, axis=1)
 
@@ -407,13 +407,13 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
     # (2) We then average again the PSE over the window size for each window/channel
     #       calculate entropy, don't use scipy.stats because we can't influence the summing over axis
     #        use numpy log function with base "e"
-    if 'power_spec_entropy' in FEATURE_LIST:
+    if 'power_spec_entropy' in config.FEATURE_LIST:
         power_spec_entropy = - np.sum(norm_power_spec * np.log(norm_power_spec), axis=d_axis)
         # (3) Reshape in order to stack features at the end
         power_spec_entropy = np.reshape(power_spec_entropy, (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, power_spec_entropy, axis=1)
 
-    if 'dominant freq' in FEATURE_LIST:
+    if 'dominant freq' in config.FEATURE_LIST:
         if window_func is not None:
             freq_offset = 2 # skip DC + 1 freq components (still a mystery why 2nd is so large
         else:
@@ -427,14 +427,14 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
     ###############################################################################################
     #                            GAME STATE FEATURES
     # dx_dy_error was only used in first experiments                                           #
-    if 'dxdy_error' in FEATURE_LIST:
+    if 'dxdy_error' in config.FEATURE_LIST:
 
         error_measure = np.reshape(np.sum(d_game_state[:, :, 0]**2, axis=d_axis), (d_game_state.shape[0], 1, 1))
         res_tensor = np.append(res_tensor, error_measure, axis=1)
         # u_values, u_counts = np.unique(error_measure, return_counts=True)
         # print("error_measure unique counts ", u_values, u_counts)
 
-    if 'cos_sim' in FEATURE_LIST:
+    if 'cos_sim' in config.FEATURE_LIST:
         # unfortunately need to loop through windows, compute cosine similarity for each window
         # separately
         cos_sims = calc_cosine_similarity(d_game_state, d_signal_3axis)
@@ -453,23 +453,23 @@ def calculate_features(d_tensor, d_game_state, d_signal_3axis, freq_bins,
             res_game_tensor = np.append(res_game_tensor, error_measure, axis=1)
             # res_game_tensor = np.append(res_game_tensor, cos_sim_avg, axis=1)
 
-    if 'maxf' in FEATURE_LIST:
+    if 'maxf' in config.FEATURE_LIST:
         maxf = np.reshape(np.amax(d_tensor, axis=d_axis), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, maxf, axis=1)
-    if 'mean' in FEATURE_LIST:
+    if 'mean' in config.FEATURE_LIST:
         mean = np.reshape(np.mean(d_tensor, axis=d_axis), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, mean, axis=1)
-    if 'std' in FEATURE_LIST:
+    if 'std' in config.FEATURE_LIST:
         std = np.reshape(np.std(d_tensor, axis=d_axis), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, std, axis=1)
-    if 'median' in FEATURE_LIST:
+    if 'median' in config.FEATURE_LIST:
         median = np.reshape(np.median(d_tensor, axis=d_axis), (dim1, 1, dim3))
         res_tensor = np.append(res_tensor, median, axis=1)
-    if 'range' in FEATURE_LIST:
+    if 'range' in config.FEATURE_LIST:
         range = maxf - minf
         res_tensor = np.append(res_tensor, range, axis=1)
 
-    if DEBUG_LEVEL >= 1:
+    if config.DEBUG_LEVEL >= 1:
         print("INFO - calculating features -shape of result tensor ", res_tensor.shape)
         # print(res_tensor)
 
@@ -533,33 +533,33 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
     if nn_switch and calc_mag:
         raise ValueError("ERROR - Preprocessing option NN cannot be combined with 'calculate magnitude'")
 
-    if device == GAME1:  # futurocube specific processing steps
-        freq = SAMPLE_FREQUENCY_FUTUROCUBE
+    if device == config.GAME1:  # futurocube specific processing steps
+        freq = config.SAMPLE_FREQUENCY_FUTUROCUBE
         if optimal_w_size:
             # for efficiency reasons make window size a multiple of 2
-            exp_2 = np.floor(np.log2(WINDOW_SIZE * freq))
+            exp_2 = np.floor(np.log2(config.WINDOW_SIZE * freq))
             window_size_samples = int(2 ** exp_2)
         else:
-            window_size_samples = int(WINDOW_SIZE * freq)
+            window_size_samples = int(config.WINDOW_SIZE * freq)
 
-        feature_list = FEATURE_LIST
+        feature_list = config.FEATURE_LIST
 
     else:
         raise NotImplementedError("NOT IMPLEMENTED YET")
 
     # calculate the maximum length (in samples) per file
-    signal_offset = int(CUT_OFF_LENGTH * freq)
-    if OVERLAP_COEFFICIENT != 1:
-        max_windows = np.floor(((MEAN_FILE_LENGTH - window_size_samples - signal_offset) /
-                                float(OVERLAP_COEFFICIENT * window_size_samples)) + 1)
+    signal_offset = int(config.CUT_OFF_LENGTH * freq)
+    if config.OVERLAP_COEFFICIENT != 1:
+        max_windows = np.floor(((config.MAX_FILE_LENGTH - window_size_samples - signal_offset) /
+                                float(config.OVERLAP_COEFFICIENT * window_size_samples)) + 1)
     else:
         # OVERLAP_COEFFICIENT = 0, means no sliding window approach
-        max_windows = np.floor(MEAN_FILE_LENGTH / float(window_size_samples))
+        max_windows = np.floor(config.MAX_FILE_LENGTH / float(window_size_samples))
 
     max_windows = int(max_windows)
     freq_bins = np.fft.fftfreq(window_size_samples, 1/freq)[:window_size_samples/2]
-    max_file_length = window_size_samples + ((max_windows - 1) * OVERLAP_COEFFICIENT * window_size_samples)
-    if DEBUG_LEVEL >= 1:
+    max_file_length = window_size_samples + ((max_windows - 1) * config.OVERLAP_COEFFICIENT * window_size_samples)
+    if config.DEBUG_LEVEL >= 1:
         print("-------------------------------------------------------------------------")
         print("INFO - Running feature calculation with the following parameter settings:")
         print("-------------------------------------------------------------------------")
@@ -596,7 +596,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
         os.chdir(root_path)
     abs_dir_path = os.getcwd() + "/"
     files_to_load = glob.glob(edate + "*." + file_ext)
-    if DEBUG_LEVEL >= 1:
+    if config.DEBUG_LEVEL >= 1:
         print("INFO - Loading accelerometer %d files from: %s" % (len(files_to_load), abs_dir_path))
     num_of_files = 0
     num_of_files_skipped = 0
@@ -620,7 +620,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
 
     for f_name in files_to_load:
         acc_file = os.path.join(abs_dir_path, f_name)
-        if DEBUG_LEVEL > 1:
+        if config.DEBUG_LEVEL > 1:
             print("INFO - processing file %s" % acc_file)
         try:
             # read file to pandas dataframe, acc_file contains the absolute path to import file
@@ -638,7 +638,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
             num_of_files += 1
             # convert the pandas dataframe to a numpy array
             # currently assuming that the dataframe columns 1 = x-axis, 2 = y-axis, 3 = z-axis
-            df.columns = IMPORT_COLUMNS
+            df.columns = config.IMPORT_COLUMNS
             # Experiments 1 when we used the unreliable dx/dy error measure. We surmised that we could rescue the
             # score by "wrapping" it back into the 16 bit range...anyway not used anymore
             if 'dxdy_error' in df.columns:
@@ -656,7 +656,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
             if f_type is not None:
                 # apply butterworth filter
                 signal_data, _ = apply_butter_filter(raw_data, freq, lowcut, highcut, f_type, b_order)
-                if DEBUG_LEVEL >= 1:
+                if config.DEBUG_LEVEL >= 1:
                     print("INFO - Dimension of tensor after filtering ", signal_data.shape)
             else:
                 signal_data = raw_data
@@ -666,7 +666,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
                                                                                 win_size=window_size_samples,
                                                                                 max_num_windows=max_windows,
                                                                                 off_set=off_set)
-            if WINDOW_SIZE == 30:
+            if config.WINDOW_SIZE == 30:
                 """
                     Note: This piece of coding refers to earlier remarks w.r.t. the game level transitions.
                     We experimented with the extraction of features only from these periods.
@@ -729,6 +729,8 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
             else:
                 # pre-processing for Neural Network of RNN usage only
                 # (1) we use the low-pass-filtered accelerometer data
+                m_features_trans = None
+                m_game_features_trans = None
                 gravity, _ = apply_butter_filter(np_signal, freq, lowcut=0.3, highcut=0, f_type='low', order=3)
                 linear_acc = np_signal - gravity
                 norm_signal = np.reshape(np.sqrt(np_signal[:, :, 0] ** 2 + np_signal[:, :, 1] ** 2 + np_signal[:, :, 2] ** 2),
@@ -759,7 +761,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
                 if m_game_features_trans is not None:
                     game_feature_data_trans = np.concatenate((game_feature_data_trans, m_game_features_trans), axis=0)
 
-            if DEBUG_LEVEL > 1:
+            if config.DEBUG_LEVEL > 1:
                 print("INFO - total length file=%d, num of windows=%d, num of features=%d, channels=%d" %
                   (signal_data.shape[0], m_features.shape[0], m_features.shape[1], m_features.shape[2]))
             # get label information
@@ -803,7 +805,7 @@ def import_data(edate, device, game, root_path, file_ext='csv', calc_mag=False,
                                   np.expand_dims(np.array(other_labels['level']), 1)), axis=1)
 
     print("INFO - %d files loaded successfully! Skipped %d" % (num_of_files, num_of_files_skipped))
-    if DEBUG_LEVEL > 1:
+    if config.DEBUG_LEVEL > 1:
         print("INFO - Feature data shape ", feature_data.shape, " / label data shape ", label_data.shape,
               " label game levels shape ", label_other.shape, " shape game state features ", game_feature_data.shape)
     # finally store matrices in hdf5 format
@@ -850,32 +852,54 @@ def get_data(e_date, device='futurocube', game='roadrunner', file_ext='csv', cal
     if os.getcwd().find('data') == -1:
         os.chdir(root_dir)
     abs_file_path = os.path.join(os.getcwd(), data_label)
-    if DEBUG_LEVEL >= 1:
+    if config.DEBUG_LEVEL >= 1:
         print("INFO - Used data label %s" % data_label)
     if os.path.isfile(abs_file_path + ".h5") and not force:
-        if DEBUG_LEVEL >= 1:
+        if config.DEBUG_LEVEL >= 1:
             print("INFO Loading matrices from h5 file %s" % abs_file_path + ".h5")
             data, labels, labels_game_level, d_dict = load_data(abs_file_path)
             return data, labels, labels_game_level, d_dict
     else:
-        if DEBUG_LEVEL >= 1:
+        if config.DEBUG_LEVEL >= 1:
             print("INFO - Need to process raw data...")
         return import_data(e_date, device, game, root_dir, file_ext, apply_window_func=apply_window_func,
                            calc_mag=calc_mag,
                            f_type=f_type, lowcut=lowcut, highcut=highcut, b_order=b_order,
                            extra_label=extra_label, optimal_w_size=optimal_w_size, nn_switch=nn_switch)
 
-do = True
-if do:
-    # 20hz_1axis_low8hz_330_12_True
-    train_data, train_labels, train_labels_game, mydict = get_data('20161206', force=False, apply_window_func=True,
-                                                                    extra_label="void_20hz_1axis_low8hz",
-                                                                    optimal_w_size=False, calc_mag=True,
-                                                                    f_type='low', lowcut=8, b_order=5, nn_switch=False)
-    print("----- Shapes of matrices ----")
-    print(train_data.shape, train_labels.shape)
-    print("----- Mean/Stddev of data set")
-    print(np.mean(train_data, axis=(0)), np.std(train_data, axis=(0)))
 
-#
-# res = split_on_classes(train_data, train_labels)
+def print_flags():
+    """
+    Prints all entries in FLAGS variable.
+    """
+    for key, value in vars(FLAGS).items():
+        print(key + ' : ' + str(value))
+
+
+def main():
+    print_flags()
+    get_data(FLAGS.exp_date, force=FLAGS.force, apply_window_func=FLAGS.apply_w_func,
+             extra_label=FLAGS.extra_label,
+             optimal_w_size=FLAGS.optimal_w_size, calc_mag=FLAGS.calc_magnitude,
+             f_type='low', lowcut=8, b_order=5,
+             nn_switch=FLAGS.nn_preprocess)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--exp_date', type=str, default='20161206',
+                        help='Date (YYYYMMDD) of experiment, to distinguish between data files.')
+    parser.add_argument('--extra_label', type=str, default="void_20hz_1axis_low8hz",
+                        help='Extra label to distinguish between different pre-processing settings.')
+    parser.add_argument('--force', action='store_true',
+                        help='Indicating whether to force (re-) preprocessing of experimental data.')
+    parser.add_argument('--apply_w_func', action='store_false',
+                        help='Indicating whether apply Hamming window function to signal data.')
+    parser.add_argument('--optimal_w_size', action='store_true',
+                        help='Indicating whether to use segmentation length that is power of 2.')
+    parser.add_argument('--calc_magnitude', action='store_false',
+                        help='Indicating whether to calculate the magnitude signal (1 channel instead of 3).')
+    parser.add_argument('--nn_preprocess', action='store_true',
+                        help='Indicating whether use pre-processing for (R)neural networks.')
+    FLAGS, unparsed = parser.parse_known_args()
+    main()

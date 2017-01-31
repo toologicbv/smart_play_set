@@ -8,9 +8,7 @@ from collections import OrderedDict
 from scipy.signal import butter, lfilter
 from scipy.spatial.distance import cosine
 from data.config import config
-from preprocessing.settings import DEBUG_LEVEL, DATA_ARRAY, LABEL_ARRAY, RAW_DATA_ARRAY, CUT_OFF_LENGTH, \
-                                    MEAN_FILE_LENGTH, OVERLAP_COEFFICIENT, LEVEL_TIME_INTERVALS, LABELS, \
-                                    LABEL_GAME_ARRAY
+from preprocessing.settings import config as g_config
 
 
 def create_row_mask(row_set, length):
@@ -135,7 +133,7 @@ def get_dir_path(device, game):
 def load_hdf5_file(filename):
 
     with h5py.File(filename + ".h5", 'r') as hf:
-        data = hf.get(RAW_DATA_ARRAY)
+        data = hf.get(g_config.RAW_DATA_ARRAY)
         data = np.array(data)
     return data
 
@@ -143,19 +141,19 @@ def load_hdf5_file(filename):
 def load_data(filename):
 
     with h5py.File(filename + ".h5", 'r') as hf:
-        if DEBUG_LEVEL >= 1:
+        if g_config.DEBUG_LEVEL >= 1:
             print('INFO - List of arrays in this file: \n', hf.keys())
-        data = hf.get(DATA_ARRAY)
+        data = hf.get(g_config.DATA_ARRAY)
         data = np.array(data)
         # contains the levels for the different motor skill classes
-        labels = hf.get(LABEL_ARRAY)
+        labels = hf.get(g_config.LABEL_ARRAY)
         labels = np.array(labels)
         # contains the labels for the different game levels
-        labels_g = hf.get(LABEL_GAME_ARRAY)
+        labels_g = hf.get(g_config.LABEL_GAME_ARRAY)
         labels_g = np.array(labels_g)
 
     with open(filename + ".json", 'r') as fp:
-        if DEBUG_LEVEL >= 1:
+        if g_config.DEBUG_LEVEL >= 1:
             print('INFO - Loading data description from json.')
         dta_dict = json.load(fp)
 
@@ -166,9 +164,9 @@ def store_data(f_data, l_data, l_g_data, out_file, out_loc, descr='None'):
 
     output_file_hd5 = out_loc + out_file + ".h5"
     h5f = h5py.File(output_file_hd5, 'w')
-    h5f.create_dataset(DATA_ARRAY, data=f_data)
-    h5f.create_dataset(LABEL_ARRAY, data=l_data)
-    h5f.create_dataset(LABEL_GAME_ARRAY, data=l_g_data)
+    h5f.create_dataset(g_config.DATA_ARRAY, data=f_data)
+    h5f.create_dataset(g_config.LABEL_ARRAY, data=l_data)
+    h5f.create_dataset(g_config.LABEL_GAME_ARRAY, data=l_g_data)
     h5f.close()
 
     # store the dictionary that contains the description of the data by means of json
@@ -176,7 +174,7 @@ def store_data(f_data, l_data, l_g_data, out_file, out_loc, descr='None'):
     with open(output_file_json, 'w') as fp:
         json.dump(descr, fp)
 
-    if DEBUG_LEVEL >= 1:
+    if g_config.DEBUG_LEVEL >= 1:
         print("INFO - Successfully saved data to %s" % (out_loc + out_file))
 
 
@@ -206,12 +204,12 @@ def make_data_description(fs, w_size, num_windows, window_func, b_filter, filter
         "filter_specs": filter_specs,
         "num_of_files": int(num_of_files),
         "features": features,
-        "cut_off_sec": CUT_OFF_LENGTH,
-        "MEAN_FILE_LENGTH": MEAN_FILE_LENGTH,
-        "OVERLAP_COEFFICIENT": OVERLAP_COEFFICIENT,
+        "cut_off_sec": g_config.CUT_OFF_LENGTH,
+        "MAX_FILE_LENGTH": g_config.MAX_FILE_LENGTH,
+        "OVERLAP_COEFFICIENT": g_config.OVERLAP_COEFFICIENT,
         "id_attributes": id_attributes,
-        "LEVEL_TIME_INTERVALS": LEVEL_TIME_INTERVALS,
-        "LABELS": LABELS
+        "LEVEL_TIME_INTERVALS": g_config.LEVEL_TIME_INTERVALS,
+        "LABELS": g_config.LABELS
         }
     return d_dict
 
@@ -220,7 +218,7 @@ def get_file_label_info(filename):
     labels = filename[filename.index('[') + 1:filename.index(']')].split(':')
     file_dict = {}
     for i, label in enumerate(labels):
-        file_dict[LABELS[i]] = label
+        file_dict[g_config.LABELS[i]] = label
 
     return file_dict
 
